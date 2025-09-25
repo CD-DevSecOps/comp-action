@@ -11,6 +11,9 @@ inputs:
   test-project-path:
     description: "Path to the test project (.csproj) to run (e.g., test/WMS.UnitTest/WMS.UnitTest.csproj)"
     required: true
+  test-report-path:
+    description: "Path to the test results file (e.g., UnitTest/coverage.opencover.xml)"
+    required: false
   sonar-project-key:
     description: "SonarQube project key"
     required: true
@@ -92,5 +95,5 @@ runs:
       with:
         args: >
           -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-          -Dsonar.cs.opencover.reportsPaths=**/TestResults/coverage.opencover.xml
+          -Dsonar.cs.opencover.reportsPaths=${{ inputs.test-report-path }}
           -Dsonar.taglist=${{ inputs.sonar-tags }}
