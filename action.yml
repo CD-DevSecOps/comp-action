@@ -8,6 +8,9 @@ inputs:
   sln-path:
     description: "Path to the .sln file to build (e.g., src/MyApp.sln)"
     required: true
+  test-project-path:
+    description: "Path to the test project (.csproj) to run (e.g., test/WMS.UnitTest/WMS.UnitTest.csproj)"
+    required: true
   sonar-project-key:
     description: "SonarQube project key"
     required: true
@@ -67,7 +70,7 @@ runs:
     - name: Run tests with coverage
       shell: bash
       run: |
-        dotnet test "${{ inputs.sln-path }}" --no-build --configuration Release \
+        dotnet test "${{ inputs.test-project-path }}" --no-build --configuration Release \
           /p:CollectCoverage=true \
           /p:CoverletOutput=TestResults/ \
           /p:CoverletOutputFormat=opencover \
