@@ -74,7 +74,6 @@ runs:
           /d:sonar.host.url="${{ env.SONAR_HOST_URL }}" \
           /d:sonar.login="${{ env.SONAR_TOKEN }}" \
           /d:sonar.cs.opencover.reportsPaths="**/TestResults/*.opencover.xml" \
-          /d:sonar.coverage.exclusions="${{ inputs.test-exclusions }}" \
           /d:sonar.taglist="${{ inputs.sonar-tags }}"
 
     - name: Build
