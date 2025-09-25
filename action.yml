@@ -5,6 +5,9 @@ inputs:
   dotnet-version:
     description: ".NET version to use"
     required: true
+  sln-path:
+    description: "Path to the .sln file to build (e.g., src/MyApp.sln)"
+    required: true
   sonar-project-key:
     description: "SonarQube project key"
     required: true
@@ -55,16 +58,16 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: dotnet restore
+      run: dotnet restore "${{ inputs.sln-path }}"
 
     - name: Build
       shell: bash
-      run: dotnet build --no-restore --configuration Release
+      run: dotnet build "${{ inputs.sln-path }}" --no-restore --configuration Release
 
     - name: Run tests with coverage
       shell: bash
       run: |
-        dotnet test --no-build --configuration Release \
+        dotnet test "${{ inputs.sln-path }}" --no-build --configuration Release \
           /p:CollectCoverage=true \
           /p:CoverletOutput=TestResults/ \
           /p:CoverletOutputFormat=opencover \
