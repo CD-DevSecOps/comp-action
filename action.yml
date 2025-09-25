@@ -62,27 +62,41 @@ runs:
     - name: Install dependencies
       shell: bash
       run: dotnet restore "${{ inputs.sln-path }}"
+    
+     # 4. Begin SonarQube analysis
+    - name: SonarScanner Begin
+      shell: bash
+      run: |
+        dotnet tool install --global dotnet-sonarscanner || true
+        export PATH="$PATH:$HOME/.dotnet/tools"
+        dotnet sonarscanner begin \
+          /k:"${{ inputs.sonar-project-key }}" \
+          /d:sonar.host.url="${{ env.SONAR_HOST_URL }}" \
+          /d:sonar.login="${{ env.SONAR_TOKEN }}" \
+          /d:sonar.cs.opencover.reportsPaths="**/TestResults/*.opencover.xml" \
+          /d:sonar.coverage.exclusions="${{ inputs.test-exclusions }}" \
+          /d:sonar.taglist="${{ inputs.sonar-tags }}"
 
     - name: Build
       shell: bash
       run: dotnet build "${{ inputs.sln-path }}" --no-restore --configuration Release
 
+    # 6. Run tests with coverage
     - name: Run tests with coverage
       shell: bash
       run: |
-        dotnet test "${{ inputs.test-project-path }}" --no-build --configuration Release \
+        COVERLET_EXCLUDE=""
+        if [ ! -z "${{ inputs.test-exclusions }}" ]; then
+          COVERLET_EXCLUDE="[${{ inputs.test-exclusions }}]*"
+        fi
+        dotnet test "${{ inputs.test-project-path }}" \
+          --no-build --configuration Release \
           /p:CollectCoverage=true \
           /p:CoverletOutput=TestResults/ \
           /p:CoverletOutputFormat=opencover \
-          /p:Exclude="[${{ inputs.test-exclusions }}]*"
+          /p:Exclude="$COVERLET_EXCLUDE"
 
-    - name: SonarQube Scan
-      uses: SonarSource/sonarqube-scan-action@v2
-      env:
-        SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
-        SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
-      with:
-        args: >
-          -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-          -Dsonar.cs.opencover.reportsPaths=**/TestResults/coverage.opencover.xml
-          -Dsonar.taglist=${{ inputs.sonar-tags }}
+    # 7. End SonarQube analysis
+    - name: SonarScanner End
+      shell: bash
+      run: dotnet sonarscanner end /d:sonar.login="${{ env.SONAR_TOKEN }}"
