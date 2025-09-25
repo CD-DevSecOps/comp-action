@@ -1,0 +1,82 @@
+name: DotNet Build & Sonar Analysis
+description: Build .NET project, run Coverlet for test coverage, and SonarQube analysis
+
+inputs:
+  dotnet-version:
+    description: ".NET version to use"
+    required: true
+  sonar-project-key:
+    description: "SonarQube project key"
+    required: true
+  sonar-tags:
+    description: "Comma-separated list of required tags (e.g. projectname=myapp,owner=Manish)"
+    required: true
+  test-exclusions:
+    description: "Comma-separated list of test case paths to exclude"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate tags
+      shell: bash
+      run: |
+        echo "🔍 Validating tags..."
+        required_keys=("projectname" "owner")
+
+        # Split tags by comma
+        IFS=',' read -ra TAGS <<< "${{ inputs.sonar-tags }}"
+
+        for key in "${required_keys[@]}"; do
+          found=false
+          for tag in "${TAGS[@]}"; do
+            if [[ "$tag" == $key=* ]]; then
+              value="${tag#*=}"
+              if [[ -z "$value" ]]; then
+                echo "❌ Tag $key has no value!"
+                exit 1
+              fi
+              echo "✅ Found required tag: $key=$value"
+              found=true
+              break
+            fi
+          done
+          if [ "$found" = false ]; then
+            echo "❌ Missing required tag: $key"
+            exit 1
+          fi
+        done
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Install dependencies
+      shell: bash
+      run: dotnet restore
+
+    - name: Build
+      shell: bash
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Run tests with coverage
+      shell: bash
+      run: |
+        dotnet test --no-build --configuration Release \
+          /p:CollectCoverage=true \
+          /p:CoverletOutput=TestResults/ \
+          /p:CoverletOutputFormat=opencover \
+          /p:Exclude="[${{ inputs.test-exclusions }}]*"
+
+    - name: SonarQube Scan
+      uses: SonarSource/sonarqube-scan-action@v2
+      env:
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        args: >
+          -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+          -Dsonar.cs.opencover.reportsPaths=**/TestResults/coverage.opencover.xml
+          -Dsonar.taglist=${{ inputs.sonar-tags }}
