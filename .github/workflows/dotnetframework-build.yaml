@@ -23,6 +23,19 @@ on:
         description: 'SonarQube project key'
         required: true
         type: string
+
+      sonar-exclude:
+        description: 'SonarQube exclude'
+        required: false
+        type: string
+
+      sonar-vstest-report:
+        required: false
+        type: string
+
+      sonar-opencover-report:
+        required: false
+        type: string
       
       ssh-port:
         description: 'SSH port to temporarily allow (usually 22)'
@@ -67,27 +80,59 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v2
 
+      # - name: Sonar Begin
+      #   shell: pwsh
+      #   run: |
+      #     & "C:\sonar\SonarScanner.MSBuild.exe" begin `
+      #       /k:"${{ inputs.sonar-project-key }}" `
+      #       /d:sonar.host.url="${{ secrets.SONAR_HOST_URL }}" `
+      #       /d:sonar.token="${{ secrets.SONAR_TOKEN }}" `
+      #       /d:sonar.verbose=true `
+      #       /d:sonar.exclusions="${{ inputs.sonar-exclude }}" `
+      #       /d:sonar.cs.vstest.reportsPaths=${{ inputs.sonar-exclude }}" 
+      #       /d:sonar.cs.opencover.reportsPaths=${{ inputs.sonar-exclude }}"
+
       - name: Sonar Begin
         shell: pwsh
         run: |
-          & "C:\sonar\SonarScanner.MSBuild.exe" begin `
-            /k:"${{ inputs.sonar-project-key }}" `
-            /d:sonar.host.url="${{ secrets.SONAR_HOST_URL }}" `
-            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" `
-            /d:sonar.verbose=true
+          $args = @(
+            'begin'
+            "/k:${{ inputs.sonar-project-key }}"
+            "/d:sonar.host.url=${{ secrets.SONAR_HOST_URL }}"
+            "/d:sonar.token=${{ secrets.SONAR_TOKEN }}"
+            "/d:sonar.verbose=true"
+          )
 
+          # Optional: sonar.exclusions
+          if ("${{ inputs.sonar-exclude }}" -ne "") {
+            $args += "/d:sonar.exclusions=${{ inputs.sonar-exclude }}"
+          }
+
+          # Optional: VsTest report paths
+          if ("${{ inputs.sonar-vstest-report }}" -ne "") {
+            $args += "/d:sonar.cs.vstest.reportsPaths=${{ inputs.sonar-vstest-report }}"
+          }
+
+          # Optional: OpenCover report paths
+          if ("${{ inputs.sonar-opencover-report }}" -ne "") {
+            $args += "/d:sonar.cs.opencover.reportsPaths=${{ inputs.sonar-opencover-report }}"
+          }
+
+          # Execute scanner
+          & "C:\sonar\SonarScanner.MSBuild.exe" @args
+      
       - name: Build for Sonar
         shell: pwsh
         run: |
-          msbuild "${{ inputs.msbuild-solution }}" `
-            /t:Rebuild `
-            /p:Configuration=Release
+                msbuild "${{ inputs.msbuild-solution }}" `
+                  /t:Rebuild `
+                  /p:Configuration=Release
 
       - name: Sonar End
         shell: pwsh
         run: |
           & "C:\sonar\SonarScanner.MSBuild.exe" end `
-            /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
   # =========================================================
   # JOB 2 – TEMPORARY AWS SECURITY GROUP WHITELIST
