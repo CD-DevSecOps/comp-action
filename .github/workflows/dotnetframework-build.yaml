@@ -143,8 +143,9 @@ jobs:
 
       - name: Remove Temporary SSH Ingress Rule
         if: always()
+        shell: pwsh
         run: |
-          CIDR="${{ needs.whitelist.outputs.ip }}/32"
+          $CIDR = "${{ needs.whitelist.outputs.ip }}/32"
           aws ec2 revoke-security-group-ingress `
             --region "${{ secrets.AWS_REGION }}" `
             --group-id "${{ secrets.SG_ID }}" `
