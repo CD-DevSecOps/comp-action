@@ -143,7 +143,13 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item "obj\Release\Package\" -Recurse -Force -ErrorAction SilentlyContinue
-
+      
+      - name: Configure AWS OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          
       - name: Remove Temporary SSH Ingress Rule
         if: always()
         shell: pwsh
