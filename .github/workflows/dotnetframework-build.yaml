@@ -43,6 +43,17 @@ on:
         type: string
         default: '22'
 
+      run-tests:
+        required: false
+        type: boolean
+        default: false
+      test-project-path:
+        required: false
+        type: string
+      test-dll-path:
+        required: false
+        type: string
+
     secrets:
       SONAR_HOST_URL:
         required: true
@@ -128,11 +139,49 @@ jobs:
                   /t:Rebuild `
                   /p:Configuration=Release
 
-      - name: Sonar End
+      # - name: Sonar End
+      #   shell: pwsh
+      #   run: |
+      #     & "C:\sonar\SonarScanner.MSBuild.exe" end `
+      #     /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
+      # ============================================================
+      # 🟨 TEST + COVERAGE (OPTIONAL)
+      # ============================================================
+      - name: Run Tests With Coverage
+        if: ${{ inputs.run-tests == true }}
+        shell: pwsh
+        run: |
+          dotnet tool install --global coverlet.console --version 6.0.2
+          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
+
+          if ("${{ inputs.test-project-path }}" -eq "" -or "${{ inputs.test-dll-path }}" -eq "") {
+            Write-Host "Test paths not provided — skipping test execution."
+            exit 0
+          }
+
+          New-Item -ItemType Directory -Force -Path "${{ inputs.test-project-path }}\TestResults" | Out-Null
+
+          coverlet `
+            "${{ inputs.test-dll-path }}" `
+            --target "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\Extensions\TestPlatform\vstest.console.exe" `
+            --targetargs "`"${{ inputs.test-dll-path }}`" /Logger:trx /ResultsDirectory:`"${{ inputs.test-project-path }}\TestResults`"" `
+            --format opencover `
+            --output "${{ inputs.test-project-path }}\coverage.opencover.xml"
+
+          if (!(Test-Path "${{ inputs.test-project-path }}\coverage.opencover.xml")) {
+            Write-Error "OpenCover file was not generated! Tests may have failed."
+            exit 1
+          }
+
+      # ============================================================
+      # 🟥 SONAR END (FAILS JOB IF QUALITY GATE FAILS)
+      # ============================================================
+      - name: SonarScanner End
         shell: pwsh
         run: |
           & "C:\sonar\SonarScanner.MSBuild.exe" end `
-          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+            /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
   # =========================================================
   # JOB 2 – TEMPORARY AWS SECURITY GROUP WHITELIST
