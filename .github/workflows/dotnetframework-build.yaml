@@ -38,7 +38,7 @@ on:
         required: true
 
 permissions:
-  id-token: read
+  id-token: write
   contents: read
 
 jobs:
@@ -145,10 +145,10 @@ jobs:
         if: always()
         run: |
           CIDR="${{ needs.whitelist.outputs.ip }}/32"
-          aws ec2 revoke-security-group-ingress \
-            --region "${{ secrets.AWS_REGION }}" \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port ${{ inputs.ssh-port }} \
-            --cidr "$CIDR" \
+          aws ec2 revoke-security-group-ingress `
+            --region "${{ secrets.AWS_REGION }}" `
+            --group-id "${{ secrets.SG_ID }}" `
+            --protocol tcp `
+            --port ${{ inputs.ssh-port }} `
+            --cidr "$CIDR" `
             --no-cli-pager || echo "Rule already removed or never existed"
