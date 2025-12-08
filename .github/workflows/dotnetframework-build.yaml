@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: windows-latest
+
+      vs-version:
+        description: 'dotnet framework version'
+        required: true
+        type: string
       
       msbuild-solution:
         description: 'Path to the .sln or .csproj file (relative to repo root)'
@@ -128,6 +133,8 @@ jobs:
           ref: ${{ github.sha }}
 
       - uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: ${{ inputs.vs-version }}
 
       - name: Build and Package API Project
         shell: pwsh
