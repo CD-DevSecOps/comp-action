@@ -29,11 +29,11 @@ on:
         required: false
         type: string
 
-      sonar-vstest-report:
+      vsonar-vstest-report:
         required: false
         type: string
 
-      sonar-opencover-report:
+      vsonar-opencover-report:
         required: false
         type: string
       
@@ -120,13 +120,13 @@ jobs:
           }
 
           # Optional: VsTest report paths
-          if ("${{ inputs.sonar-vstest-report }}" -ne "") {
-            $args += "/d:sonar.cs.vstest.reportsPaths=${{ inputs.sonar-vstest-report }}"
+          if ("${{ inputs.vsonar-vstest-report }}" -ne "") {
+            $args += "/d:sonar.cs.vstest.reportsPaths=${{ inputs.vsonar-vstest-report }}"
           }
 
           # Optional: OpenCover report paths
-          if ("${{ inputs.sonar-opencover-report }}" -ne "") {
-            $args += "/d:sonar.cs.opencover.reportsPaths=${{ inputs.sonar-opencover-report }}"
+          if ("${{ inputs.vsonar-opencover-report }}" -ne "") {
+            $args += "/d:sonar.cs.opencover.reportsPaths=${{ inputs.vsonar-opencover-report }}"
           }
 
           # Execute scanner
