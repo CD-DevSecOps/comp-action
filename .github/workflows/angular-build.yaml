@@ -1,0 +1,191 @@
+name: Build API Network (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner to use for Angular jobs (default: ubuntu-latest)'
+        required: false
+        type: string
+        default: ubuntu-latest
+      
+      sonar-project-key:
+        description: 'SonarQube project key'
+        required: true
+        type: string
+
+      node-version:
+        description: 'Node.js version to use'
+        required: true
+        type: string
+      
+      angular-cli-version:
+        description: 'Angular CLI version to install globally (optional)'
+        required: false
+        type: string
+        default: ''
+
+      sonar-exclude:
+        description: 'SonarQube exclude'
+        required: false
+        type: string
+        default: '**/node_modules/**,**/dist/**,**/build/**,**/*.min.js,**/*.bundle.js'
+
+      ssh-port:
+        description: 'SSH port to temporarily allow (usually 22)'
+        required: false
+        type: string
+        default: '22'
+
+      run-tests:
+        required: false
+        type: boolean
+        default: false
+
+      coverage-report-path:
+        description: 'Path to lcov.info coverage report'
+        required: false
+        type: string
+        default: 'coverage/lcov.info'
+      
+      test-args:
+        description: 'Additional arguments for ng test'
+        required: false
+        type: string
+        default: '--watch=false'
+
+      coverage-path:
+        description: 'Path to lcov.info coverage report'
+        required: false
+        type: string
+        default: 'coverage/lcov.info'
+
+    secrets:
+      SONAR_HOST_URL:
+        required: true
+      SONAR_TOKEN:
+        required: true
+      AWS_REGION:
+        required: true
+      SG_ID:
+        required: true
+      AWS_OIDC_ROLE:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+
+# =========================================================
+  # JOB 1 – SONAR SCANNING
+# =========================================================
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Angular CLI
+        if: ${{ inputs.angular-cli-version != '' }}
+        run: npm install -g @angular/cli@${{ inputs.angular-cli-version }}
+
+      - name: Run tests with coverage
+        if: ${{ inputs.run-tests == true }}
+        run: |
+          ng test --code-coverage ${{ inputs.test-args }}
+        env:
+          CI: true
+
+      - name: Build for Sonar
+        run: |
+          ng build --configuration production
+
+      - name: Install SonarScanner CLI
+        run: |
+          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.0.1.3869-linux.zip -O sonar-scanner.zip
+          unzip sonar-scanner.zip -d /opt
+          echo "/opt/sonar-scanner-6.0.1.3869-linux/bin" >> $GITHUB_PATH
+
+      - name: SonarScanner
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+            -Dsonar.sources=src \
+            -Dsonar.tests=src \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.exclusions=${{ inputs.sonar-exclude }} \
+            -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-path }}
+  # # =========================================================
+  # # JOB 2 – TEMPORARY AWS SECURITY GROUP WHITELIST
+  # # =========================================================
+  # whitelist:
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     ip: ${{ steps.ip.outputs.ip }}
+  #   steps:
+  #     - name: Configure AWS OIDC
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+  #         aws-region: ${{ secrets.AWS_REGION }}
+
+  #     - name: Get Runner Public IP
+  #       id: ip
+  #       run: |
+  #         IP=$(curl -s https://checkip.amazonaws.com | xargs)
+  #         echo "ip=$IP" >> $GITHUB_OUTPUT
+
+  #     - name: Add Temporary SSH Ingress Rule
+  #       run: |
+  #         CIDR="${{ steps.ip.outputs.ip }}/32"
+  #         aws ec2 authorize-security-group-ingress \
+  #           --region "${{ secrets.AWS_REGION }}" \
+  #           --group-id "${{ secrets.SG_ID }}" \
+  #           --protocol tcp \
+  #           --port ${{ inputs.ssh-port }} \
+  #           --cidr "$CIDR" \
+  #           --no-cli-pager || echo "Rule may already exist"
+
+  # # =========================================================
+  # # JOB 3 – BUILD + PACKAGE + DEPLOY
+  # # =========================================================
+  # build-and-deploy:
+  #   runs-on: ${{ inputs.runner }}
+  #   needs: [sonar, whitelist]
+  #   steps:
+      
+  #     - name: Configure AWS OIDC
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+  #         aws-region: ${{ secrets.AWS_REGION }}
+          
+  #     - name: Remove Temporary SSH Ingress Rule
+  #       if: always()
+  #       shell: pwsh
+  #       run: |
+  #         $CIDR = "${{ needs.whitelist.outputs.ip }}/32"
+  #         aws ec2 revoke-security-group-ingress `
+  #           --region "${{ secrets.AWS_REGION }}" `
+  #           --group-id "${{ secrets.SG_ID }}" `
+  #           --protocol tcp `
+  #           --port ${{ inputs.ssh-port }} `
+  #           --cidr "$CIDR" `
+  #           --no-cli-pager || echo "Rule already removed or never existed"
