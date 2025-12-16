@@ -66,11 +66,11 @@ on:
       SONAR_TOKEN:
         required: true
       AWS_REGION:
-        required: true
+        required: false
       SG_ID:
-        required: true
+        required: false
       AWS_OIDC_ROLE:
-        required: true
+        required: false
 
 permissions:
   id-token: write
