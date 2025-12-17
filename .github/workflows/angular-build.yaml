@@ -136,8 +136,8 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-            -Dsonar.sources=src
-            -Dsonar.tests=src
+            -Dsonar.sources=.
+            # -Dsonar.tests=src
             -Dsonar.exclusions=${{ inputs.sonar-exclude }}
             -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-path }}
 
