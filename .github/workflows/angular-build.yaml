@@ -135,8 +135,8 @@ jobs:
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346.zip -O sonar-scanner.zip
           unzip sonar-scanner.zip
           ls
-          ls sonar-scanner
-          sudo mv sonar-scanner/sonar-scanner-8.0.1.6346/bin/sonar-scanner /usr/local/bin/
+          ls sonar-scanner-8.0.1.6346
+          sudo mv sonar-scanner-8.0.1.6346/bin/sonar-scanner /usr/local/bin/
           sonar-scanner --version
           
       - name: SonarScanner
