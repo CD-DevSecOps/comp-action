@@ -126,7 +126,7 @@ jobs:
       - name: Build for Sonar (Optional)
         if: ${{ inputs.install-angular-cli == true }}
         run: |
-          ng build --configuration production
+          npm build
 
       - name: Install SonarScanner CLI
         run: |
