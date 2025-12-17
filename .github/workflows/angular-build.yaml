@@ -133,10 +133,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y unzip
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346.zip -O sonar-scanner.zip
-          unzip sonar-scanner.zip
-          ls
-          ls sonar-scanner-8.0.1.6346
-          sudo mv sonar-scanner-8.0.1.6346/bin/sonar-scanner /usr/local/bin/
+          unzip -q sonar-scanner.zip -d /opt/
+          chmod +x /opt/sonar-scanner-8.0.1.6346-linux/bin/sonar-scanner
+          echo "/opt/sonar-scanner-8.0.1.6346-linux/bin" >> $GITHUB_PATH
           sonar-scanner --version
           
       - name: SonarScanner
