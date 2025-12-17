@@ -130,7 +130,7 @@ jobs:
 
       - name: Install SonarScanner CLI
         run: |
-          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346.zip -O sonar-scanner.zip
+          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.1.0.4477.zip -O sonar-scanner.zip
           unzip sonar-scanner.zip -d /opt
           echo "/opt/sonar-scanner-6.0.1.3869-linux/bin" >> $GITHUB_PATH
 
