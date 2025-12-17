@@ -128,29 +128,43 @@ jobs:
         run: |
           npm build
 
-      - name: Install SonarScanner CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346.zip -O sonar-scanner.zip
-          unzip -q sonar-scanner.zip -d /opt/
-          chmod +x /opt/sonar-scanner-8.0.1.6346/bin/sonar-scanner
-          echo "/opt/sonar-scanner-8.0.1.6346/bin" >> $GITHUB_PATH
-          sonar-scanner --version
-          
-      - name: SonarScanner
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: |
-          sonar-scanner \
-            -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
-            -Dsonar.sources=src \
-            -Dsonar.tests=src \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
-            -Dsonar.exclusions=${{ inputs.sonar-exclude }} \
+        with:
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+            -Dsonar.sources=src
+            -Dsonar.tests=src
+            -Dsonar.exclusions=${{ inputs.sonar-exclude }}
             -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-path }}
+
+
+      # - name: Install SonarScanner CLI
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y unzip
+      #     wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346.zip -O sonar-scanner.zip
+      #     unzip -q sonar-scanner.zip -d /opt/
+      #     chmod +x /opt/sonar-scanner-8.0.1.6346/bin/sonar-scanner
+      #     echo "/opt/sonar-scanner-8.0.1.6346/bin" >> $GITHUB_PATH
+      #     sonar-scanner --version
+          
+      # - name: SonarScanner
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #     SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      #   run: |
+      #     sonar-scanner \
+      #       -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+      #       -Dsonar.sources=src \
+      #       -Dsonar.tests=src \
+      #       -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+      #       -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+      #       -Dsonar.exclusions=${{ inputs.sonar-exclude }} \
+      #       -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-path }}
   # # =========================================================
   # # JOB 2 – TEMPORARY AWS SECURITY GROUP WHITELIST
   # # =========================================================
