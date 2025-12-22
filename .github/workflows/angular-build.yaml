@@ -135,7 +135,11 @@ jobs:
       - name: Install Angular CLI (Optional)
         if: ${{ inputs.install-angular-cli == true }}
         run: |
-          npm install -g @angular/cli@${{ inputs.angular-cli-version }}
+          if [ -n "${{ inputs.angular-cli-version }}" ]; then
+            npm install -g @angular/cli@${{ inputs.angular-cli-version }}
+          else
+            npm install -g @angular/cli
+          fi
           echo "Angular CLI installed successfully"
 
       - name: Run tests with coverage (Optional)
@@ -175,7 +179,7 @@ jobs:
       # =========================================================
   Build:
     runs-on: ${{ inputs.runner }}
-    needs: [sonar, gitleaks]
+    needs: [sonar]
     steps:
       - uses: actions/checkout@v4
         with:
