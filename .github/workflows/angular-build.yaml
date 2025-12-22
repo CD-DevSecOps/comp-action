@@ -9,6 +9,12 @@ on:
         type: string
         default: ubuntu-latest
 
+      run-gitleaks:
+        description: 'Run Gitleaks secret scanning'
+        required: false
+        type: boolean
+        default: false
+
       npm-flags:
         description: 'Additional flags for npm install (e.g. --legacy-peer-deps)'
         required: false
@@ -90,12 +96,28 @@ permissions:
 
 
 # =========================================================
-  # JOB 1 – SONAR SCANNING
+  # JOB 1 – Gitleaks & SONAR SCANNING
 # =========================================================
 
 jobs:
+  gitleaks:
+    runs-on: ${{ inputs.runner }}
+    if: ${{ inputs.run-gitleaks == true }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for Gitleaks
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # Optional for orgs
+        continue-on-error: false  # Fail workflow if leaks found
+
   sonar:
     runs-on: ${{ inputs.runner }}
+    needs: [gitleaks]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -153,7 +175,7 @@ jobs:
       # =========================================================
   Build:
     runs-on: ${{ inputs.runner }}
-
+    needs: [sonar, gitleaks]
     steps:
       - uses: actions/checkout@v4
         with:
