@@ -95,7 +95,7 @@ permissions:
 
 jobs:
   sonar:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -126,7 +126,7 @@ jobs:
       - name: Build for Sonar (Optional)
         if: ${{ inputs.install-angular-cli == true }}
         run: |
-          npm build
+          npm run build
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
@@ -140,31 +140,59 @@ jobs:
             # -Dsonar.tests=src
             -Dsonar.exclusions=${{ inputs.sonar-exclude }}
             -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-path }}
-
-
-      # - name: Install SonarScanner CLI
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y unzip
-      #     wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346.zip -O sonar-scanner.zip
-      #     unzip -q sonar-scanner.zip -d /opt/
-      #     chmod +x /opt/sonar-scanner-8.0.1.6346/bin/sonar-scanner
-      #     echo "/opt/sonar-scanner-8.0.1.6346/bin" >> $GITHUB_PATH
-      #     sonar-scanner --version
-          
-      # - name: SonarScanner
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      #     SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-      #   run: |
-      #     sonar-scanner \
-      #       -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+             #       -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
       #       -Dsonar.sources=src \
       #       -Dsonar.tests=src \
       #       -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
       #       -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
       #       -Dsonar.exclusions=${{ inputs.sonar-exclude }} \
       #       -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-path }}
+    
+      # =========================================================
+      # JOB 2 – BUILD
+      # =========================================================
+  Build:
+    runs-on: ${{ inputs.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+
+      # Single flexible install step
+      - name: Install dependencies
+        run: |
+          # prefer npm ci in CI; fall back to npm install for local‑style installs
+          if npm ci ${{ inputs.npm-flags }}; then
+            echo "Installed with npm ci ${{ inputs.npm-flags }}"
+          else
+            echo "npm ci failed, falling back to npm install ${{ inputs.npm-flags }}"
+            npm install ${{ inputs.npm-flags }}
+          fi
+
+      - name: Install Angular CLI (Optional)
+        if: ${{ inputs.install-angular-cli == true }}
+        run: |
+          if [ -n "${{ inputs.angular-cli-version }}" ]; then
+            npm install -g @angular/cli@${{ inputs.angular-cli-version }}
+          else
+            npm install -g @angular/cli
+          fi
+          echo "Angular CLI installed successfully"
+
+      - name: Build Angular app
+        run: |
+          # Use your project's build script
+          npm run build
+
+      
+     
   # # =========================================================
   # # JOB 2 – TEMPORARY AWS SECURITY GROUP WHITELIST
   # # =========================================================
@@ -181,24 +209,10 @@ jobs:
 
   #     - name: Get Runner Public IP
   #       id: ip
-  #       run: |
-  #         IP=$(curl -s https://checkip.amazonaws.com | xargs)
-  #         echo "ip=$IP" >> $GITHUB_OUTPUT
-
-  #     - name: Add Temporary SSH Ingress Rule
-  #       run: |
-  #         CIDR="${{ steps.ip.outputs.ip }}/32"
-  #         aws ec2 authorize-security-group-ingress \
-  #           --region "${{ secrets.AWS_REGION }}" \
-  #           --group-id "${{ secrets.SG_ID }}" \
-  #           --protocol tcp \
-  #           --port ${{ inputs.ssh-port }} \
-  #           --cidr "$CIDR" \
-  #           --no-cli-pager || echo "Rule may already exist"
-
-  # # =========================================================
-  # # JOB 3 – BUILD + PACKAGE + DEPLOY
-  # # =========================================================
+# # =========================================================
+# # JOB 3 – BUILD + PACKAGE + DEPLOY
+# # =========================================================
+  
   # build-and-deploy:
   #   runs-on: ${{ inputs.runner }}
   #   needs: [sonar, whitelist]
