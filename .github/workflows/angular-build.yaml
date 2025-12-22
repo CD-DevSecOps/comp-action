@@ -5,7 +5,7 @@ on:
     inputs:
       runner:
         description: 'Runner to use for Angular jobs (default: ubuntu-latest)'
-        required: false
+        required: true
         type: string
         default: ubuntu-latest
 
@@ -118,6 +118,7 @@ jobs:
   sonar:
     runs-on: ${{ inputs.runner }}
     needs: [gitleaks]
+    if: ${{ always() && (needs.gitleaks.result == 'success' || needs.gitleaks.result == 'skipped') }}
     steps:
       - uses: actions/checkout@v4
         with:
