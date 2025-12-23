@@ -190,6 +190,46 @@ jobs:
       # =========================================================
       # JOB 2 – BUILD
       # =========================================================
+  # Build:
+  #   runs-on: ${{ inputs.runner-build }}
+  #   needs: [sonar]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: ${{ inputs.node-version }}
+  #         cache: 'npm'
+
+  #     # Single flexible install step
+  #     - name: Install dependencies
+  #       run: |
+  #         # prefer npm ci in CI; fall back to npm install for local‑style installs
+  #         if npm ci ${{ inputs.npm-flags }}; then
+  #           echo "Installed with npm ci ${{ inputs.npm-flags }}"
+  #         else
+  #           echo "npm ci failed, falling back to npm install ${{ inputs.npm-flags }}"
+  #           npm install ${{ inputs.npm-flags }}
+  #         fi
+
+  #     - name: Install Angular CLI (Optional)
+  #       if: ${{ inputs.install-angular-cli == true }}
+  #       run: |
+  #         if [ -n "${{ inputs.angular-cli-version }}" ]; then
+  #           npm install -g @angular/cli@${{ inputs.angular-cli-version }}
+  #         else
+  #           npm install -g @angular/cli
+  #         fi
+  #         echo "Angular CLI installed successfully"
+
+  #     - name: Build Angular app
+  #       run: |
+  #         # Use your project's build script
+  #         npm run build
+
   Build:
     runs-on: ${{ inputs.runner-build }}
     needs: [sonar]
@@ -197,26 +237,41 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+  
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
           cache: 'npm'
-
-      # Single flexible install step
-      - name: Install dependencies
+  
+      # ---------- Install dependencies (Linux/macOS) ----------
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'   # Ubuntu runners
+        shell: bash
         run: |
-          # prefer npm ci in CI; fall back to npm install for local‑style installs
           if npm ci ${{ inputs.npm-flags }}; then
             echo "Installed with npm ci ${{ inputs.npm-flags }}"
           else
             echo "npm ci failed, falling back to npm install ${{ inputs.npm-flags }}"
             npm install ${{ inputs.npm-flags }}
           fi
-
-      - name: Install Angular CLI (Optional)
-        if: ${{ inputs.install-angular-cli == true }}
+  
+      # ---------- Install dependencies (Windows) ----------
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: bash      # bash is available on windows-latest; use pwsh if you prefer
+        run: |
+          if npm ci ${{ inputs.npm-flags }}; then
+            echo "Installed with npm ci ${{ inputs.npm-flags }}"
+          else
+            echo "npm ci failed, falling back to npm install ${{ inputs.npm-flags }}"
+            npm install ${{ inputs.npm-flags }}
+          fi
+  
+      # ---------- Install Angular CLI (Linux) ----------
+      - name: Install Angular CLI (Linux)
+        if: runner.os == 'Linux' && inputs.install-angular-cli == true
+        shell: bash
         run: |
           if [ -n "${{ inputs.angular-cli-version }}" ]; then
             npm install -g @angular/cli@${{ inputs.angular-cli-version }}
@@ -224,11 +279,25 @@ jobs:
             npm install -g @angular/cli
           fi
           echo "Angular CLI installed successfully"
-
-      - name: Build Angular app
+  
+      # ---------- Install Angular CLI (Windows) ----------
+      - name: Install Angular CLI (Windows)
+        if: runner.os == 'Windows' && inputs.install-angular-cli == true
+        shell: bash   # or pwsh with PowerShell syntax
         run: |
-          # Use your project's build script
+          if [ -n "${{ inputs.angular-cli-version }}" ]; then
+            npm install -g @angular/cli@${{ inputs.angular-cli-version }}
+          else
+            npm install -g @angular/cli
+          fi
+          echo "Angular CLI installed successfully"
+  
+      # ---------- Build Angular app (both OSes, bash syntax) ----------
+      - name: Build Angular app
+        shell: bash
+        run: |
           npm run build
+
 
       
      
