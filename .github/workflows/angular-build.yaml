@@ -9,6 +9,12 @@ on:
         type: string
         default: ubuntu-latest
 
+      runner-build:
+        description: 'Runner to use for Angular jobs (default: ubuntu-latest)'
+        required: true
+        type: string
+        default: windows-latest
+        
       run-gitleaks:
         description: 'Run Gitleaks secret scanning'
         required: false
@@ -185,7 +191,7 @@ jobs:
       # JOB 2 – BUILD
       # =========================================================
   Build:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner-build }}
     needs: [sonar]
     steps:
       - uses: actions/checkout@v4
