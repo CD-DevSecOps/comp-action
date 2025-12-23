@@ -1,0 +1,181 @@
+name: Build Python App (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runner-build:
+        description: 'Runner for Python jobs (default: ubuntu-latest)'
+        required: false
+        type: string
+        default: ubuntu-latest
+
+      run-gitleaks:
+        description: 'Run Gitleaks secret scanning'
+        required: false
+        type: boolean
+        default: false
+
+      python-version:
+        description: 'Python version to use'
+        required: true
+        type: string
+
+      sonar-project-key:
+        description: 'SonarQube project key'
+        required: true
+        type: string
+
+      sonar-exclude:
+        description: 'SonarQube exclude patterns'
+        required: false
+        type: string
+        default: '**/venv/**,**/.venv/**,**/dist/**,**/build/**,**/*.pyc,**/__pycache__/**'
+
+      run-tests:
+        description: 'Run pytest with coverage'
+        required: false
+        type: boolean
+        default: true
+
+      coverage-xml-path:
+        description: 'Path to coverage XML report'
+        required: false
+        type: string
+        default: 'coverage.xml'
+
+      working-directory:
+        description: 'Directory where the Python app lives'
+        required: false
+        type: string
+        default: '.'
+
+    secrets:
+      SONAR_HOST_URL:
+        required: true
+      SONAR_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: read
+
+jobs:
+  # ============================
+  # Job 1 - Gitleaks (optional)
+  # ============================
+  gitleaks:
+    runs-on: ${{ inputs.runner-build }}
+    if: ${{ inputs.run-gitleaks == true }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks (OSS version)
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.16.3/gitleaks_8.16.3_linux_x64.tar.gz | tar xz
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Run Gitleaks (non-blocking)
+        run: |
+          set +e
+          gitleaks detect --source . -v --redact
+          echo "Gitleaks finished; leaks (if any) do not fail the build for now."
+          set -e
+        # If you want leaks to fail the pipeline later, remove set+e/set-e and add --exit-code 1
+        # run: gitleaks detect --source . -v --redact --exit-code 1
+        # [web:63][web:61]
+
+  # ============================
+  # Job 2 - Tests + Sonar
+  # ============================
+  sonar:
+    runs-on: ${{ inputs.runner-build }}
+    needs: [gitleaks]
+    if: ${{ always() && (needs.gitleaks.result == 'success' || needs.gitleaks.result == 'skipped') }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+        # Use requirements.txt, or adapt for poetry/pipenv if needed [web:162]
+
+      - name: Run tests with coverage (pytest)
+        if: ${{ inputs.run-tests == true }}
+        run: |
+          pip install pytest pytest-cov
+          pytest --cov=. --cov-report=xml:${{ inputs.coverage-xml-path }}
+        env:
+          PYTHONPATH: ${{ inputs.working-directory }}
+        # pytest + pytest-cov is standard for Python coverage in SonarQube [web:150][web:153]
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+            -Dsonar.sources=${{ inputs.working-directory }}
+            -Dsonar.exclusions=${{ inputs.sonar-exclude }}
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-xml-path }}
+        # Mapping pytest coverage XML → sonar.python.coverage.reportPaths is the supported way. [web:153][web:163]
+
+  # ============================
+  # Job 3 - Build/package
+  # ============================
+  build:
+    runs-on: ${{ inputs.runner-build }}
+    needs: [sonar]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Build Python package
+        run: |
+          if [ -f pyproject.toml ]; then
+            pip install build
+            python -m build
+          elif [ -f setup.py ]; then
+            python setup.py sdist bdist_wheel
+          else
+            echo "No build configuration (pyproject.toml or setup.py) found, skipping build."
+        # Support both modern pyproject + legacy setup.py projects [web:162]
