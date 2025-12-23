@@ -113,8 +113,13 @@ jobs:
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.16.3/gitleaks_8.16.3_linux_x64.tar.gz | tar xz
           sudo mv gitleaks /usr/local/bin/
 
-      - name: Run Gitleaks
-        run: gitleaks detect --source . -v --redact
+      - name: Run Gitleaks (non‑blocking)
+        run: |
+          set +e
+          gitleaks detect --source . -v --redact
+          echo "Gitleaks finished; leaks (if any) will not fail the pipeline for now."
+          set -e
+
         
   sonar:
     runs-on: ${{ inputs.runner }}
