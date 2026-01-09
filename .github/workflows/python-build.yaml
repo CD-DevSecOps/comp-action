@@ -103,8 +103,24 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
-
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env file from secrets
+        if: ${{ inputs.create-dotenv == true }}   # Only run if requested
+        uses: SpicyPizza/create-envfile@v2       # Or your manual echo script
+        with:
+          dbname: ${{ inputs.DBNAME }}
+          dbusername: ${{ inputs.DBUSERNAME }}
+          dbpassword: ${{ secrets.DBPASSWORD }}
+          dbhost: ${{ inputs.DBHOST }}
+          tenantId: ${{ inputs.TENANTID }}
+          clientId: ${{ inputs.CLIENTID }}
+          clientSecret: ${{ secrets.CLIENTSECRET }}
+          # Add others as needed
+          directory: ${{ inputs.working-directory || '.' }}
+          file_name: .env
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
