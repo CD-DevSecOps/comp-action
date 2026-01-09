@@ -3,13 +3,37 @@ name: Build Python App (Reusable)
 on:
   workflow_call:
     inputs:
-      create-dotenv:          # New input
+      create-dotenv:
         description: 'Whether to create .env file from secrets'
         required: false
         type: boolean
         default: false
+
+      enable-aws-sg-whitelist:
+        description: 'Temporarily whitelist runner IP in AWS Security Group'
+        required: false
+        type: boolean
+        default: false
+
+      aws-role-arn:
+        description: 'ARN of IAM role to assume for SG modification'
+        required: false
+        type: string
+
+      aws-region:
+        description: 'AWS region for Security Group'
+        required: false
+        type: string
+        default: us-east-1
+
+      aws-security-group-id:
+        description: 'Security Group ID to modify'
+        required: false
+        type: string
+
+      # Existing inputs
       runner-build:
-        description: 'Runner for Python jobs (default: ubuntu-latest)'
+        description: 'Runner for Python jobs'
         required: false
         type: string
         default: ubuntu-latest
@@ -46,7 +70,7 @@ on:
         description: 'Path to coverage XML report'
         required: false
         type: string
-        default: 'coverage.xml'
+        default: coverage.xml
 
       working-directory:
         description: 'Directory where the Python app lives'
@@ -54,17 +78,38 @@ on:
         type: string
         default: '.'
 
+      # .env inputs (if create-dotenv is true)
+      DBNAME:
+        required: false
+        type: string
+      DBUSERNAME:
+        required: false
+        type: string
+      DBHOST:
+        required: false
+        type: string
+      TENANTID:
+        required: false
+        type: string
+      CLIENTID:
+        required: false
+        type: string
+
     secrets:
       SONAR_HOST_URL:
         required: true
       SONAR_TOKEN:
         required: true
+      DBPASSWORD:
+        required: false
+      CLIENTSECRET:
+        required: false
       OTHER_SECRET:
         required: false
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write  # Required for OIDC AWS assume role
   pull-requests: read
 
 jobs:
@@ -77,58 +122,77 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
-
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Gitleaks (OSS version)
+      - name: Install Gitleaks
         run: |
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.16.3/gitleaks_8.16.3_linux_x64.tar.gz | tar xz
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz
           sudo mv gitleaks /usr/local/bin/
 
       - name: Run Gitleaks (non-blocking)
         run: |
           set +e
           gitleaks detect --source . -v --redact
-          echo "Gitleaks finished; leaks (if any) do not fail the build for now."
+          echo "Gitleaks finished; leaks (if any) do not fail the build."
           set -e
-        # If you want leaks to fail the pipeline later, remove set+e/set-e and add --exit-code 1
-        # run: gitleaks detect --source . -v --redact --exit-code 1
-        # [web:63][web:61]
 
   # ============================
-  # Job 2 - Tests + Sonar
+  # Job 2 - Setup SG Whitelist (if enabled)
+  # ============================
+  setup-sg-whitelist:
+    runs-on: ${{ inputs.runner-build }}
+    if: ${{ inputs.enable-aws-sg-whitelist == true }}
+    outputs:
+      runner-ip: ${{ steps.ip.outputs.ipv4 }}
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Get Runner Public IP
+        id: ip
+        uses: haythem/public-ip@v1.3
+
+      - name: Add Runner IP to Security Group
+        run: |
+          IP="${{ steps.ip.outputs.ipv4 }}/32"
+          aws ec2 authorize-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 22 --cidr $IP || true
+          aws ec2 authorize-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 3306 --cidr $IP || true
+
+  # ============================
+  # Job 3 - Tests + Sonar
   # ============================
   sonar:
     runs-on: ${{ inputs.runner-build }}
-    needs: [gitleaks]
+    needs: [gitleaks, setup-sg-whitelist]
     if: ${{ always() && (needs.gitleaks.result == 'success' || needs.gitleaks.result == 'skipped') }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
+
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Create .env file from secrets
-        if: ${{ inputs.create-dotenv == true }}   # Only run if requested
-        uses: SpicyPizza/create-envfile@v2       # Or your manual echo script
-        with:
-          dbname: ${{ inputs.DBNAME }}
-          dbusername: ${{ inputs.DBUSERNAME }}
-          dbpassword: ${{ secrets.DBPASSWORD }}
-          dbhost: ${{ inputs.DBHOST }}
-          tenantId: ${{ inputs.TENANTID }}
-          clientId: ${{ inputs.CLIENTID }}
-          clientSecret: ${{ secrets.CLIENTSECRET }}
-          # Add others as needed
-          directory: ${{ inputs.working-directory || '.' }}
-          file_name: .env
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Create .env file from secrets
+        if: ${{ inputs.create-dotenv == true }}
+        uses: SpicyPizza/create-envfile@v2
+        with:
+          directory: ${{ inputs.working-directory }}
+          file_name: .env
+          DBNAME: ${{ inputs.DBNAME }}
+          DBUSERNAME: ${{ inputs.DBUSERNAME }}
+          DBPASSWORD: ${{ secrets.DBPASSWORD }}
+          DBHOST: ${{ inputs.DBHOST }}
+          TENANTID: ${{ inputs.TENANTID }}
+          CLIENTID: ${{ inputs.CLIENTID }}
+          CLIENTSECRET: ${{ secrets.CLIENTSECRET }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -137,19 +201,18 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-        # Use requirements.txt, or adapt for poetry/pipenv if needed [web:162]
 
-      - name: Run tests with coverage (pytest)
+      - name: Run tests with coverage
         if: ${{ inputs.run-tests == true }}
         run: |
           pip install pytest pytest-cov
           pytest --cov=. --cov-report=xml:${{ inputs.coverage-xml-path }}
         env:
           PYTHONPATH: ${{ inputs.working-directory }}
-        # pytest + pytest-cov is standard for Python coverage in SonarQube [web:150][web:153]
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
@@ -163,18 +226,17 @@ jobs:
             -Dsonar.exclusions=${{ inputs.sonar-exclude }}
             -Dsonar.tests=tests
             -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-xml-path }}
-        # Mapping pytest coverage XML → sonar.python.coverage.reportPaths is the supported way. [web:153][web:163]
 
+  
   # ============================
-  # Job 3 - Build/package
+  # Job 5 - Build/package
   # ============================
   build:
     runs-on: ${{ inputs.runner-build }}
-    needs: [sonar]
+    needs: [sonar, gitleaks ]
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -200,5 +262,29 @@ jobs:
           elif [ -f setup.py ]; then
             python setup.py sdist bdist_wheel
           else
-            echo "No build configuration (pyproject.toml or setup.py) found, skipping build."
-        # Support both modern pyproject + legacy setup.py projects [web:162]
+            echo "No build configuration found, skipping build."
+          fi
+
+  # ============================
+  # Job 4 - Cleanup SG Whitelist (always run if setup ran)
+  # ============================
+  cleanup-sg-whitelist:
+    runs-on: ${{ inputs.runner-build }}
+    if: ${{ always() && inputs.enable-aws-sg-whitelist == true && needs.setup-sg-whitelist.result == 'success' }}
+    needs: [setup-sg-whitelist, sonar]
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Get Runner Public IP
+        id: ip
+        uses: haythem/public-ip@v1.3
+
+      - name: Remove Runner IP from Security Group
+        run: |
+          IP="${{ steps.ip.outputs.ipv4 }}/32"
+          aws ec2 revoke-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 22 --cidr $IP || true
+          aws ec2 revoke-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 3306 --cidr $IP || true
