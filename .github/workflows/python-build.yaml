@@ -180,19 +180,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create .env file from secrets
+      - name: Set environment variables from secrets
         if: ${{ inputs.create-dotenv == true }}
-        uses: SpicyPizza/create-envfile@v2
-        with:
-          directory: ${{ inputs.working-directory }}
-          file_name: .env
-          DBNAME: ${{ inputs.DBNAME }}
-          DBUSERNAME: ${{ inputs.DBUSERNAME }}
-          DBPASSWORD: ${{ secrets.DBPASSWORD }}
-          DBHOST: ${{ inputs.DBHOST }}
-          TENANTID: ${{ inputs.TENANTID }}
-          CLIENTID: ${{ inputs.CLIENTID }}
-          CLIENTSECRET: ${{ secrets.CLIENTSECRET }}
+        run: |
+          echo "DBNAME=${{ inputs.DBNAME }}" >> $GITHUB_ENV
+          echo "DBUSERNAME=${{ inputs.DBUSERNAME }}" >> $GITHUB_ENV
+          echo "DBPASSWORD=${{ secrets.DBPASSWORD }}" >> $GITHUB_ENV
+          echo "DBHOST=${{ inputs.DBHOST }}" >> $GITHUB_ENV
+          echo "TENANTID=${{ inputs.TENANTID }}" >> $GITHUB_ENV
+          echo "CLIENTID=${{ inputs.CLIENTID }}" >> $GITHUB_ENV
+          echo "CLIENTSECRET=${{ secrets.CLIENTSECRET }}" >> $GITHUB_ENV
+          # Add more lines here for additional variables as needed
 
       - name: Set up Python
         uses: actions/setup-python@v5
