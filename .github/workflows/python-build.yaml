@@ -169,7 +169,7 @@ jobs:
     if: ${{ inputs.enable-aws-sg-whitelist == true }}
   
     outputs:
-      runner-ip: ${{ steps.ip.outputs.ip }}
+      runner-ip: ${{ steps.ip.outputs.ip4 }}
   
     steps:
       - name: Configure AWS Credentials
@@ -185,17 +185,27 @@ jobs:
       - name: Add Runner IP to Security Group
         shell: bash
         run: |
-          IP="${{ steps.ip.outputs.ip }}/32"
+          set -e
+      
+          IP="${{ steps.ip.outputs.ipv4 }}/32"
           echo "Whitelisting IP: $IP"
-  
-          for PORT in 22 3306; do
-            aws ec2 authorize-security-group-ingress \
-              --group-id ${{ inputs.aws-security-group-id }} \
-              --protocol tcp \
-              --port $PORT \
-              --cidr $IP \
-            || echo "Rule already exists for port $PORT"
-          done
+      
+          aws ec2 authorize-security-group-ingress \
+            --region ${{ inputs.aws-region }} \
+            --group-id ${{ inputs.aws-security-group-id }} \
+            --protocol tcp \
+            --port 22 \
+            --cidr "$IP" \
+          || echo "Rule already exists for port 22"
+      
+          aws ec2 authorize-security-group-ingress \
+            --region ${{ inputs.aws-region }} \
+            --group-id ${{ inputs.aws-security-group-id }} \
+            --protocol tcp \
+            --port 3306 \
+            --cidr "$IP" \
+          || echo "Rule already exists for port 3306"
+
 
 
   # ============================
