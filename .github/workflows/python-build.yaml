@@ -142,27 +142,61 @@ jobs:
   # ============================
   # Job 2 - Setup SG Whitelist (if enabled)
   # ============================
+  # setup-sg-whitelist:
+  #   runs-on: ${{ inputs.runner-build }}
+  #   if: ${{ inputs.enable-aws-sg-whitelist == true }}
+  #   outputs:
+  #     runner-ip: ${{ steps.ip.outputs.ipv }}
+  #   steps:
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ inputs.aws-role-arn }}
+  #         aws-region: ${{ inputs.aws-region }}
+
+  #     - name: Get Runner Public IP
+  #       id: ip
+  #       uses: haythem/public-ip@v1.3
+
+  #     - name: Add Runner IP to Security Group
+  #       run: |
+  #         IP="${{ steps.ip.outputs.ipv }}/32"
+  #         aws ec2 authorize-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 22 --cidr $IP || true
+  #         aws ec2 authorize-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 3306 --cidr $IP || true
+
   setup-sg-whitelist:
     runs-on: ${{ inputs.runner-build }}
     if: ${{ inputs.enable-aws-sg-whitelist == true }}
+  
     outputs:
-      runner-ip: ${{ steps.ip.outputs.ipv }}
+      runner-ip: ${{ steps.ip.outputs.ip }}
+  
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ inputs.aws-role-arn }}
           aws-region: ${{ inputs.aws-region }}
-
+  
       - name: Get Runner Public IP
         id: ip
         uses: haythem/public-ip@v1.3
-
+  
       - name: Add Runner IP to Security Group
+        shell: bash
         run: |
-          IP="${{ steps.ip.outputs.ipv }}/32"
-          aws ec2 authorize-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 22 --cidr $IP || true
-          aws ec2 authorize-security-group-ingress --group-id ${{ inputs.aws-security-group-id }} --protocol tcp --port 3306 --cidr $IP || true
+          IP="${{ steps.ip.outputs.ip }}/32"
+          echo "Whitelisting IP: $IP"
+  
+          for PORT in 22 3306; do
+            aws ec2 authorize-security-group-ingress \
+              --group-id ${{ inputs.aws-security-group-id }} \
+              --protocol tcp \
+              --port $PORT \
+              --cidr $IP \
+            || echo "Rule already exists for port $PORT"
+          done
+
 
   # ============================
   # Job 3 - Tests + Sonar
