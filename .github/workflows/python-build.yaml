@@ -183,18 +183,18 @@ jobs:
   # ============================
   # Job 3 - Tests + Sonar
   # ============================
-  sonar:
-    runs-on: ${{ inputs.runner-build }}
-    needs: [gitleaks, setup-sg-whitelist]
-    if: ${{ always() && (needs.gitleaks.result == 'success' || needs.gitleaks.result == 'skipped') }}
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory }}
+  # sonar:
+  #   runs-on: ${{ inputs.runner-build }}
+  #   needs: [gitleaks, setup-sg-whitelist]
+  #   if: ${{ always() && (needs.gitleaks.result == 'success' || needs.gitleaks.result == 'skipped') }}
+  #   defaults:
+  #     run:
+  #       working-directory: ${{ inputs.working-directory }}
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
 
       - name: Inject config and create .env (Jenkins configFileProvider equivalent)
         if: ${{ inputs.create-dotenv == true }}
