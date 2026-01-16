@@ -349,7 +349,7 @@ jobs:
   cleanup-sg-whitelist:
     runs-on: ${{ inputs.runner-build }}
     if: ${{ always() && inputs.enable-aws-sg-whitelist == true && needs.setup-sg-whitelist.result == 'success' }}
-    needs: [setup-sg-whitelist, sonar]
+    needs: [setup-sg-whitelist]
 
     steps:
       - name: Configure AWS Credentials   # ← important! need credentials again
