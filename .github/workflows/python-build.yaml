@@ -209,26 +209,31 @@ jobs:
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
 
-      - name: Test MySQL connection
+      - name: Test MySQL connection (more verbose)
         if: ${{ inputs.create-dotenv == true }}
         run: |
           source .env
-          echo "DB Host: $DBHOST"
-          echo "DB User: $DBUSERNAME"
-          echo "DB Name: $DBNAME"
-
+          
+          echo "Trying to connect to:"
+          echo "  Host: $DBHOST"
+          echo "  User: $DBUSERNAME"
+          echo "  DB:   $DBNAME"
+          echo "  Runner public IP should be whitelisted: $(curl -s ifconfig.me)"
+          
+          # Quick connectivity check (no auth needed)
+          nc -zv -w 8 "$DBHOST" 3306 && echo "Port 3306 reachable ✓" || echo "Port 3306 NOT reachable ✗"
+          
+          # Real connection attempt
           MYSQL_PWD="$DBPASSWORD" \
           mysql --host="$DBHOST" \
                 --user="$DBUSERNAME" \
                 --port=3306 \
-                --connect-timeout=10 \
-                -e "SELECT 1" \
-                "$DBNAME" || {
-            echo "!!! DB connection failed !!!"
+                --connect-timeout=12 \
+                -e "SELECT VERSION() AS version, DATABASE() AS current_db;" \
+                "$DBNAME" 2>&1 || {
+            echo "!!! Connection failed - see above for details !!!"
             exit 1
           }
-
-          echo "Database connection looks good ✓"
 
 
           
