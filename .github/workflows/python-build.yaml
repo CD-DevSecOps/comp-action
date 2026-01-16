@@ -209,40 +209,40 @@ jobs:
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
           
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python-version }}
+      # - name: Set up Python
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: ${{ inputs.python-version }}
 
-      - name: Install dependencies
-        run: |
-          pip install python-dotenv mysql-connector-python
+      # - name: Install dependencies
+      #   run: |
+      #     pip install python-dotenv mysql-connector-python
 
-      - name: Debug – Test DB connection
-        if: ${{ inputs.create-dotenv == true }}
-        run: |
-          python - <<'EOF'
-          import os, sys
-          from dotenv import load_dotenv
-          import mysql.connector
+      # - name: Debug – Test DB connection
+      #   if: ${{ inputs.create-dotenv == true }}
+      #   run: |
+      #     python - <<'EOF'
+      #     import os, sys
+      #     from dotenv import load_dotenv
+      #     import mysql.connector
       
-          load_dotenv(dotenv_path=".env")
+      #     load_dotenv(dotenv_path=".env")
       
-          try:
-              conn = mysql.connector.connect(
-                  host=os.getenv("DBHOST"),
-                  user=os.getenv("DBUSERNAME"),
-                  password=os.getenv("DBPASSWORD"),
-                  database=os.getenv("DBNAME"),
-                  connection_timeout=5
-              )
-              print("✅ Database connection successful")
-              conn.close()
-          except Exception as e:
-              print("❌ Database connection failed")
-              print(e)
-              sys.exit(1)
-          EOF
+      #     try:
+      #         conn = mysql.connector.connect(
+      #             host=os.getenv("DBHOST"),
+      #             user=os.getenv("DBUSERNAME"),
+      #             password=os.getenv("DBPASSWORD"),
+      #             database=os.getenv("DBNAME"),
+      #             connection_timeout=5
+      #         )
+      #         print("✅ Database connection successful")
+      #         conn.close()
+      #     except Exception as e:
+      #         print("❌ Database connection failed")
+      #         print(e)
+      #         sys.exit(1)
+      #     EOF
 
 
       - name: Create Virtual Environment
