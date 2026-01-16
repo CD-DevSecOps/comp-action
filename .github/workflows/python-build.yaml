@@ -209,13 +209,6 @@ jobs:
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
           
-      - name: Validate required env vars
-        if: ${{ inputs.create-dotenv == true }}
-        run: |
-          for v in DBNAME DBUSERNAME DBPASSWORD DBHOST; do
-            [ -z "${!v}" ] && echo "Missing $v" && exit 1
-          done
-          
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
