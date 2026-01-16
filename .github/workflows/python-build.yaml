@@ -209,13 +209,26 @@ jobs:
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
 
-      - name: Install MySQL client
+      - name: Test MySQL connection
+        if: ${{ inputs.create-dotenv == true }}
         run: |
-            source .env
-            echo $DBNAME
-            # sudo apt-get update
-            # sudo apt-get install -y mysql-client
-            MYSQL_PWD="$DBPASSWORD" mysql -u idta_dev -h 54.205.106.101 -Ne "show databases;"
+          source .env
+          echo "DB Host: $DBHOST"
+          echo "DB User: $DBUSERNAME"
+          echo "DB Name: $DBNAME"
+
+          MYSQL_PWD="$DBPASSWORD" \
+          mysql --host="$DBHOST" \
+                --user="$DBUSERNAME" \
+                --port=3306 \
+                --connect-timeout=10 \
+                -e "SELECT 1" \
+                "$DBNAME" || {
+            echo "!!! DB connection failed !!!"
+            exit 1
+          }
+
+          echo "Database connection looks good ✓"
 
 
           
@@ -332,28 +345,31 @@ jobs:
     runs-on: ${{ inputs.runner-build }}
     if: ${{ always() && inputs.enable-aws-sg-whitelist == true && needs.setup-sg-whitelist.result == 'success' }}
     needs: [setup-sg-whitelist, sonar]
+
     steps:
+      - name: Configure AWS Credentials   # ← important! need credentials again
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
       - name: Remove Runner IP from Security Group
         shell: bash
         run: |
-          set -e
-      
-          IP="${{ steps.ip.outputs.ipv4 }}/32"
+          IP="${{ needs.setup-sg-whitelist.outputs.runner-ip }}/32"
           echo "Removing IP: $IP"
-      
-          # Try to remove port 22, ignore if missing
+
+          # Best-effort revoke (ignore if rule doesn't exist)
           aws ec2 revoke-security-group-ingress \
             --region ${{ inputs.aws-region }} \
             --group-id ${{ inputs.aws-security-group-id }} \
             --protocol tcp \
             --port 22 \
-            --cidr "$IP" || echo "Port 22 rule not found"
-      
-          # Try to remove port 3306, ignore if missing
+            --cidr "$IP" || true
+
           aws ec2 revoke-security-group-ingress \
             --region ${{ inputs.aws-region }} \
             --group-id ${{ inputs.aws-security-group-id }} \
             --protocol tcp \
             --port 3306 \
-            --cidr "$IP" || echo "Port 3306 rule not found"
-      
+            --cidr "$IP" || true
