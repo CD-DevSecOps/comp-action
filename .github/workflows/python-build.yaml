@@ -113,9 +113,6 @@ permissions:
   pull-requests: read
 
 jobs:
-  # ============================
-  # Job 1 - Gitleaks (optional)
-  # ============================
   gitleaks:
     runs-on: ${{ inputs.runner-build }}
     if: ${{ inputs.run-gitleaks == true }}
@@ -128,17 +125,10 @@ jobs:
           fetch-depth: 0
 
       - name: Install Gitleaks
-        run: |
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz
-          sudo mv gitleaks /usr/local/bin/
-
-      - name: Run Gitleaks (non-blocking)
-        run: |
-          set +e
-          gitleaks detect --source . -v --redact
-          echo "Gitleaks finished; leaks (if any) do not fail the build."
-          set -e
-
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --no-git -v
+          
   setup-sg-whitelist:
     runs-on: ${{ inputs.runner-build }}
     if: ${{ inputs.enable-aws-sg-whitelist == true }}
@@ -199,7 +189,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create .env file
+      - name: Inject config and create .env (Jenkins configFileProvider equivalent)
         if: ${{ inputs.create-dotenv == true }}
         run: |
           cat <<EOF > .env
@@ -211,28 +201,38 @@ jobs:
           CLIENTID=${{ inputs.CLIENTID }}
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
-
-
+          
+      - name: Validate required env vars
+        if: ${{ inputs.create-dotenv == true }}
+        run: |
+          for v in DBNAME DBUSERNAME DBPASSWORD DBHOST; do
+            [ -z "${!v}" ] && echo "Missing $v" && exit 1
+          done
+          
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version }}
 
-      - name: Install dependencies
+      - name: Create Virtual Environment
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
+          python -m venv venv
+          source venv/bin/activate
+          which python
 
-      - name: Run tests with coverage
-        if: ${{ inputs.run-tests == true }}
+      - name: Install Packages
         run: |
-          pip install pytest pytest-cov
-          pytest --cov=. --cov-report=xml:${{ inputs.coverage-xml-path }}
-        env:
-          PYTHONPATH: ${{ inputs.working-directory }}
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest coverage
 
+      - name: Run Tests & Coverage
+        run: |
+          source venv/bin/activate
+          coverage run -m pytest
+          coverage xml
+          
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
@@ -247,42 +247,42 @@ jobs:
             -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-xml-path }}
 
   
-  # ============================
-  # Job 5 - Build/package
-  # ============================
-  build:
-    runs-on: ${{ inputs.runner-build }}
-    needs: [sonar, gitleaks ]
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+  # # ============================
+  # # Job 5 - Build/package
+  # # ============================
+  # build:
+  #   runs-on: ${{ inputs.runner-build }}
+  #   needs: [sonar, gitleaks ]
+  #   defaults:
+  #     run:
+  #       working-directory: ${{ inputs.working-directory }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python-version }}
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: ${{ inputs.python-version }}
 
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
+  #     - name: Install build dependencies
+  #       run: |
+  #         python -m pip install --upgrade pip
+  #         if [ -f requirements.txt ]; then
+  #           pip install -r requirements.txt
+  #         fi
 
-      - name: Build Python package
-        run: |
-          if [ -f pyproject.toml ]; then
-            pip install build
-            python -m build
-          elif [ -f setup.py ]; then
-            python setup.py sdist bdist_wheel
-          else
-            echo "No build configuration found, skipping build."
-          fi
+  #     - name: Build Python package
+  #       run: |
+  #         if [ -f pyproject.toml ]; then
+  #           pip install build
+  #           python -m build
+  #         elif [ -f setup.py ]; then
+  #           python setup.py sdist bdist_wheel
+  #         else
+  #           echo "No build configuration found, skipping build."
+  #         fi
 
   # ============================
   # Job 4 - Cleanup SG Whitelist (always run if setup ran)
