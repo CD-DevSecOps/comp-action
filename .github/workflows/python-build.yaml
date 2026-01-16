@@ -208,6 +208,13 @@ jobs:
           CLIENTID=${{ inputs.CLIENTID }}
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
+
+      - name: Install MySQL client
+        run: |
+            sudo apt-get update
+            sudo apt-get install -y mysql-client
+            mysql -u idta_dev -h 54.205.106.101 -p${{ secrets.DBPASSWORD }} -Ne "show databases;"
+
           
       # - name: Set up Python
       #   uses: actions/setup-python@v5
