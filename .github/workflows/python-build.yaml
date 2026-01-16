@@ -209,13 +209,13 @@ jobs:
           CLIENTSECRET=${{ secrets.CLIENTSECRET }}
           EOF
 
-      - name: Install MySQL client
-        run: |
-            source .env
-            echo $DBNAME
-            sudo apt-get update
-            sudo apt-get install -y mysql-client
-            mysql -u idta_dev -h 54.205.106.101 -p$DBPASSWORD -Ne "show databases;"
+      # - name: Install MySQL client
+      #   run: |
+      #       source .env
+      #       echo $DBNAME
+      #       # sudo apt-get update
+      #       # sudo apt-get install -y mysql-client
+      #       mysql -u idta_dev -h 54.205.106.101 -p$DBPASSWORD -Ne "show databases;"
 
           
       # - name: Set up Python
