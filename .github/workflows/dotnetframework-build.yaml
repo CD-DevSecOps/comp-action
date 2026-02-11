@@ -4,62 +4,61 @@ on:
   workflow_call:
     inputs:
       runner:
-        description: Runner to use
         required: false
         type: string
         default: windows-latest
 
       vs-version:
-        description: Dotnet framework version
         required: true
         type: string
 
       msbuild-solution:
-        description: Path to .sln or .csproj
         required: true
         type: string
 
-      # Optional Controls
       run-sonar:
+        required: false
         type: boolean
         default: false
+
+      sonar-project-key:
+        required: false
+        type: string
+
+      sonar-exclude:
+        required: false
+        type: string
+
+      vsonar-vstest-report:
+        required: false
+        type: string
+
+      vsonar-opencover-report:
+        required: false
+        type: string
 
       run-tests:
+        required: false
         type: boolean
         default: false
 
+      test-project-path:
+        required: false
+        type: string
+
+      test-dll-path:
+        required: false
+        type: string
+
       run-whitelist:
+        required: false
         type: boolean
         default: false
 
       ssh-port:
+        required: false
         type: string
         default: "22"
-
-      # Sonar Optional Inputs
-      sonar-project-key:
-        type: string
-        required: false
-
-      sonar-exclude:
-        type: string
-        required: false
-
-      vsonar-vstest-report:
-        type: string
-        required: false
-
-      vsonar-opencover-report:
-        type: string
-        required: false
-
-      test-project-path:
-        type: string
-        required: false
-
-      test-dll-path:
-        type: string
-        required: false
 
     secrets:
       SONAR_HOST_URL:
@@ -67,11 +66,11 @@ on:
       SONAR_TOKEN:
         required: false
       AWS_REGION:
-        required: false
+        required: true
       SG_ID:
-        required: false
+        required: true
       AWS_OIDC_ROLE:
-        required: false
+        required: true
 
 permissions:
   id-token: write
@@ -102,69 +101,77 @@ jobs:
       - name: Install Sonar Scanner
         shell: pwsh
         run: |
-          $url = "https://github.com/SonarSource/sonar-scanner-msbuild/releases/download/11.0.0.126294/sonar-scanner-11.0.0.126294-net-framework.zip"
-          Invoke-WebRequest -Uri $url -OutFile "sonar.zip"
-          Expand-Archive sonar.zip -DestinationPath "C:\sonar"
+          dotnet tool install --global dotnet-sonarscanner
+          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
 
       - name: Sonar Begin
         shell: pwsh
         run: |
-          $args = @(
-            'begin'
-            "/k:${{ inputs.sonar-project-key }}"
-            "/d:sonar.host.url=${{ secrets.SONAR_HOST_URL }}"
-            "/d:sonar.token=${{ secrets.SONAR_TOKEN }}"
-          )
+          dotnet sonarscanner begin `
+            /k:"${{ inputs.sonar-project-key }}" `
+            /d:sonar.host.url="${{ secrets.SONAR_HOST_URL }}" `
+            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" `
+            /d:sonar.exclusions="${{ inputs.sonar-exclude }}"
 
-          if ("${{ inputs.sonar-exclude }}" -ne "") {
-            $args += "/d:sonar.exclusions=${{ inputs.sonar-exclude }}"
-          }
-
-          if ("${{ inputs.vsonar-vstest-report }}" -ne "") {
-            $args += "/d:sonar.cs.vstest.reportsPaths=${{ inputs.vsonar-vstest-report }}"
-          }
-
-          if ("${{ inputs.vsonar-opencover-report }}" -ne "") {
-            $args += "/d:sonar.cs.opencover.reportsPaths=${{ inputs.vsonar-opencover-report }}"
-          }
-
-          & "C:\sonar\SonarScanner.MSBuild.exe" @args
-
-      - name: Build for Sonar
+      - name: Build
         shell: pwsh
         run: |
           msbuild "${{ inputs.msbuild-solution }}" `
             /t:Rebuild `
             /p:Configuration=Release
 
-      - name: Run Tests With Coverage
+      - name: Run Tests
         if: ${{ inputs.run-tests == true }}
         shell: pwsh
         run: |
-          dotnet tool install --global coverlet.console --version 6.0.2
-          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
-
-          coverlet `
-            "${{ inputs.test-dll-path }}" `
-            --target "vstest.console.exe" `
-            --targetargs "`"${{ inputs.test-dll-path }}`"" `
-            --format opencover `
-            --output "${{ inputs.test-project-path }}/coverage.opencover.xml"
+          vstest.console.exe "${{ inputs.test-dll-path }}"
 
       - name: Sonar End
         shell: pwsh
         run: |
-          & "C:\sonar\SonarScanner.MSBuild.exe" end `
+          dotnet sonarscanner end `
             /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
+# =========================================================
+# 2️⃣ WHITELIST JOB (OPTIONAL)
+# =========================================================
+  whitelist:
+    if: ${{ inputs.run-whitelist == true }}
+    runs-on: ubuntu-latest
+
+    outputs:
+      ip: ${{ steps.ip.outputs.ip }}
+
+    steps:
+      - name: Configure AWS OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get Public IP
+        id: ip
+        run: |
+          IP=$(curl -s https://checkip.amazonaws.com | xargs)
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+
+      - name: Authorize Security Group
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id "${{ secrets.SG_ID }}" \
+            --protocol tcp \
+            --port ${{ inputs.ssh-port }} \
+            --cidr "${{ steps.ip.outputs.ip }}/32" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager || echo "Rule may already exist"
 
 # =========================================================
-# 2️⃣ BUILD + DEPLOY JOB
+# 3️⃣ BUILD + DEPLOY JOB
 # =========================================================
   build-and-deploy:
+    needs: [sonar, whitelist]
+    if: ${{ always() && (inputs.run-sonar == false || needs.sonar.result == 'success') }}
     runs-on: ${{ inputs.runner }}
-    needs: [sonar]
-    if: ${{ always() }}
 
     steps:
       - uses: actions/checkout@v4
@@ -173,65 +180,29 @@ jobs:
         with:
           vs-version: ${{ inputs.vs-version }}
 
-      # ===============================
-      # Optional AWS Whitelist
-      # ===============================
-      - name: Configure AWS
-        if: ${{ inputs.run-whitelist == true }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Get Runner IP
-        if: ${{ inputs.run-whitelist == true }}
-        id: ip
-        shell: pwsh
-        run: |
-          $ip = (Invoke-RestMethod -Uri "https://checkip.amazonaws.com").Trim()
-          echo "ip=$ip" >> $env:GITHUB_OUTPUT
-
-      - name: Add SSH Rule
-        if: ${{ inputs.run-whitelist == true }}
-        shell: pwsh
-        run: |
-          aws ec2 authorize-security-group-ingress `
-            --region "${{ secrets.AWS_REGION }}" `
-            --group-id "${{ secrets.SG_ID }}" `
-            --protocol tcp `
-            --port ${{ inputs.ssh-port }} `
-            --cidr "${{ steps.ip.outputs.ip }}/32" `
-            --no-cli-pager || echo "Rule may already exist"
-
-      # ===============================
-      # Build
-      # ===============================
       - name: Build Project
         shell: pwsh
         run: |
           msbuild "${{ inputs.msbuild-solution }}" `
             /t:Rebuild `
             /p:Configuration=Release `
-            /p:DeployOnBuild=true `
-            /p:PackageTempRootDir="obj\Release\Package\"
+            /p:DeployOnBuild=true
 
-      - name: Cleanup Package
-        if: always()
-        shell: pwsh
-        run: |
-          Remove-Item "obj\Release\Package\" -Recurse -Force -ErrorAction SilentlyContinue
+      - name: Configure AWS OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        if: ${{ inputs.run-whitelist == true }}
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      # ===============================
-      # Remove SSH Rule
-      # ===============================
-      - name: Remove SSH Rule
+      - name: Remove Temporary Rule
         if: ${{ inputs.run-whitelist == true }}
         shell: pwsh
         run: |
           aws ec2 revoke-security-group-ingress `
-            --region "${{ secrets.AWS_REGION }}" `
             --group-id "${{ secrets.SG_ID }}" `
             --protocol tcp `
             --port ${{ inputs.ssh-port }} `
-            --cidr "${{ steps.ip.outputs.ip }}/32" `
+            --cidr "${{ needs.whitelist.outputs.ip }}/32" `
+            --region "${{ secrets.AWS_REGION }}" `
             --no-cli-pager || echo "Rule already removed"
