@@ -84,12 +84,11 @@ jobs:
   sonar:
     if: ${{ inputs.run-sonar == true }}
     runs-on: ${{ inputs.runner }}
-
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          
+          fetch-depth: 0  # Required for accurate Sonar analysis
+
       - name: Install Sonar Scanner (MSBuild)
         shell: pwsh
         run: |
@@ -97,16 +96,8 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile "sonar.zip"
           Expand-Archive sonar.zip -DestinationPath "C:\sonar"
           echo "SONAR_SCANNER_HOME=C:\sonar" >> $env:GITHUB_ENV
-          
-      - uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: ${{ inputs.vs-version }}
 
-      - name: Install Sonar Scanner
-        shell: pwsh
-        run: |
-          dotnet tool install --global dotnet-sonarscanner
-          echo "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+      - uses: microsoft/setup-msbuild@v2
 
       - name: Sonar Begin
         shell: pwsh
@@ -119,57 +110,70 @@ jobs:
             "/d:sonar.verbose=true"
           )
 
+          # Optional: sonar.exclusions
           if ("${{ inputs.sonar-exclude }}" -ne "") {
             $args += "/d:sonar.exclusions=${{ inputs.sonar-exclude }}"
           }
 
+          # Optional: VsTest report paths
           if ("${{ inputs.vsonar-vstest-report }}" -ne "") {
             $args += "/d:sonar.cs.vstest.reportsPaths=${{ inputs.vsonar-vstest-report }}"
           }
 
+          # Optional: OpenCover report paths
           if ("${{ inputs.vsonar-opencover-report }}" -ne "") {
             $args += "/d:sonar.cs.opencover.reportsPaths=${{ inputs.vsonar-opencover-report }}"
           }
 
-          dotnet sonarscanner @args
-
-      # ==========================
-      # BUILD
-      # ==========================
+          # Execute scanner
+          & "C:\sonar\SonarScanner.MSBuild.exe" @args
+      
       - name: Build for Sonar
         shell: pwsh
         run: |
-          msbuild "${{ inputs.msbuild-solution }}" `
-            /t:Rebuild `
-            /p:Configuration=Release
+                msbuild "${{ inputs.msbuild-solution }}" `
+                  /t:Rebuild `
+                  /p:Configuration=Release
 
-      # ==========================
-      # TEST + COVERAGE (SAFE VERSION)
-      # ==========================
+     
+      # ============================================================
+      # 🟨 TEST + COVERAGE (OPTIONAL)
+      # ============================================================
       - name: Run Tests With Coverage
         if: ${{ inputs.run-tests == true }}
         shell: pwsh
         run: |
-          if ("${{ inputs.test-project-path }}" -eq "") {
-            Write-Host "Test project not provided — skipping."
+          dotnet tool install --global coverlet.console --version 6.0.2
+          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
+
+          if ("${{ inputs.test-project-path }}" -eq "" -or "${{ inputs.test-dll-path }}" -eq "") {
+            Write-Host "Test paths not provided — skipping test execution."
             exit 0
           }
 
-          dotnet test "${{ inputs.test-project-path }}" `
-            --configuration Release `
-            --no-build `
-            /p:CollectCoverage=true `
-            /p:CoverletOutputFormat=opencover `
-            /p:CoverletOutput="${{ inputs.test-project-path }}\coverage.opencover.xml"
+          New-Item -ItemType Directory -Force -Path "${{ inputs.test-project-path }}\TestResults" | Out-Null
 
-      # ==========================
-      # SONAR END
-      # ==========================
-      - name: Sonar End
+          coverlet `
+            "${{ inputs.test-dll-path }}" `
+            --target "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\Extensions\TestPlatform\vstest.console.exe" `
+            --targetargs "`"${{ inputs.test-dll-path }}`" /Logger:trx /ResultsDirectory:`"${{ inputs.test-project-path }}\TestResults`"" `
+            --format opencover `
+            --output "${{ inputs.test-project-path }}\coverage.opencover.xml"
+
+          if (!(Test-Path "${{ inputs.test-project-path }}\coverage.opencover.xml")) {
+            Write-Error "OpenCover file was not generated! Tests may have failed."
+            exit 1
+          }
+
+      # ============================================================
+      # 🟥 SONAR END (FAILS JOB IF QUALITY GATE FAILS)
+      # ============================================================
+      - name: SonarScanner End
         shell: pwsh
         run: |
-          dotnet sonarscanner end `
+          & "C:\sonar\SonarScanner.MSBuild.exe" end `
             /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
 
 # =========================================================
 # 2️⃣ WHITELIST JOB (OPTIONAL)
