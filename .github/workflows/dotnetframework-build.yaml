@@ -225,7 +225,7 @@ jobs:
   # =========================================================
   build-and-deploy:
     runs-on: ${{ inputs.runner }}
-    needs: [sonar, whitelist]
+    needs: whitelist
     steps:
       - uses: actions/checkout@v4
         with:
