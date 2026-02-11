@@ -4,110 +4,103 @@ on:
   workflow_call:
     inputs:
       runner:
-        description: 'Runner to use for Windows jobs (default: windows-latest)'
+        description: Runner to use
         required: false
         type: string
         default: windows-latest
 
       vs-version:
-        description: 'dotnet framework version'
+        description: Dotnet framework version
         required: true
         type: string
-      
+
       msbuild-solution:
-        description: 'Path to the .sln or .csproj file (relative to repo root)'
+        description: Path to .sln or .csproj
         required: true
         type: string
-      
-      sonar-project-key:
-        description: 'SonarQube project key'
-        required: false
-        type: string
 
-      sonar-exclude:
-        description: 'SonarQube exclude'
-        required: false
-        type: string
-
-      vsonar-vstest-report:
-        required: false
-        type: string
-
-      vsonar-opencover-report:
-        required: false
-        type: string
-
+      # Optional Controls
       run-sonar:
-        required: false
         type: boolean
         default: false
-      
-      ssh-port:
-        description: 'SSH port to temporarily allow (usually 22)'
-        required: false
-        type: string
-        default: '22'
 
       run-tests:
-        required: false
         type: boolean
         default: false
+
+      run-whitelist:
+        type: boolean
+        default: false
+
+      ssh-port:
+        type: string
+        default: "22"
+
+      # Sonar Optional Inputs
+      sonar-project-key:
+        type: string
+        required: false
+
+      sonar-exclude:
+        type: string
+        required: false
+
+      vsonar-vstest-report:
+        type: string
+        required: false
+
+      vsonar-opencover-report:
+        type: string
+        required: false
+
       test-project-path:
-        required: false
         type: string
+        required: false
+
       test-dll-path:
-        required: false
         type: string
+        required: false
 
     secrets:
       SONAR_HOST_URL:
-        required: true
+        required: false
       SONAR_TOKEN:
-        required: true
+        required: false
       AWS_REGION:
-        required: true
+        required: false
       SG_ID:
-        required: true
+        required: false
       AWS_OIDC_ROLE:
-        required: true
+        required: false
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  # =========================================================
-  # JOB 1 – SONAR SCANNING
-  # =========================================================
+
+# =========================================================
+# 1️⃣ SONAR JOB (OPTIONAL)
+# =========================================================
   sonar:
     if: ${{ inputs.run-sonar == true }}
     runs-on: ${{ inputs.runner }}
+
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for accurate Sonar analysis
+          fetch-depth: 0
 
-      - name: Install Sonar Scanner (MSBuild)
+      - uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: ${{ inputs.vs-version }}
+
+      - name: Install Sonar Scanner
         shell: pwsh
         run: |
           $url = "https://github.com/SonarSource/sonar-scanner-msbuild/releases/download/11.0.0.126294/sonar-scanner-11.0.0.126294-net-framework.zip"
           Invoke-WebRequest -Uri $url -OutFile "sonar.zip"
           Expand-Archive sonar.zip -DestinationPath "C:\sonar"
-          echo "SONAR_SCANNER_HOME=C:\sonar" >> $env:GITHUB_ENV
-
-      - uses: microsoft/setup-msbuild@v2
-
-      # - name: Sonar Begin
-      #   shell: pwsh
-      #   run: |
-      #     & "C:\sonar\SonarScanner.MSBuild.exe" begin `
-      #       /k:"${{ inputs.sonar-project-key }}" `
-      #       /d:sonar.host.url="${{ secrets.SONAR_HOST_URL }}" `
-      #       /d:sonar.token="${{ secrets.SONAR_TOKEN }}" `
-      #       /d:sonar.verbose=true `
-      #       /d:sonar.exclusions="${{ inputs.sonar-exclude }}" `
-      #       /d:sonar.cs.vstest.reportsPaths=${{ inputs.sonar-exclude }}" 
-      #       /d:sonar.cs.opencover.reportsPaths=${{ inputs.sonar-exclude }}"
 
       - name: Sonar Begin
         shell: pwsh
@@ -117,43 +110,29 @@ jobs:
             "/k:${{ inputs.sonar-project-key }}"
             "/d:sonar.host.url=${{ secrets.SONAR_HOST_URL }}"
             "/d:sonar.token=${{ secrets.SONAR_TOKEN }}"
-            "/d:sonar.verbose=true"
           )
 
-          # Optional: sonar.exclusions
           if ("${{ inputs.sonar-exclude }}" -ne "") {
             $args += "/d:sonar.exclusions=${{ inputs.sonar-exclude }}"
           }
 
-          # Optional: VsTest report paths
           if ("${{ inputs.vsonar-vstest-report }}" -ne "") {
             $args += "/d:sonar.cs.vstest.reportsPaths=${{ inputs.vsonar-vstest-report }}"
           }
 
-          # Optional: OpenCover report paths
           if ("${{ inputs.vsonar-opencover-report }}" -ne "") {
             $args += "/d:sonar.cs.opencover.reportsPaths=${{ inputs.vsonar-opencover-report }}"
           }
 
-          # Execute scanner
           & "C:\sonar\SonarScanner.MSBuild.exe" @args
-      
+
       - name: Build for Sonar
         shell: pwsh
         run: |
-                msbuild "${{ inputs.msbuild-solution }}" `
-                  /t:Rebuild `
-                  /p:Configuration=Release
+          msbuild "${{ inputs.msbuild-solution }}" `
+            /t:Rebuild `
+            /p:Configuration=Release
 
-      # - name: Sonar End
-      #   shell: pwsh
-      #   run: |
-      #     & "C:\sonar\SonarScanner.MSBuild.exe" end `
-      #     /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
-
-      # ============================================================
-      # 🟨 TEST + COVERAGE (OPTIONAL)
-      # ============================================================
       - name: Run Tests With Coverage
         if: ${{ inputs.run-tests == true }}
         shell: pwsh
@@ -161,82 +140,69 @@ jobs:
           dotnet tool install --global coverlet.console --version 6.0.2
           $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
 
-          if ("${{ inputs.test-project-path }}" -eq "" -or "${{ inputs.test-dll-path }}" -eq "") {
-            Write-Host "Test paths not provided — skipping test execution."
-            exit 0
-          }
-
-          New-Item -ItemType Directory -Force -Path "${{ inputs.test-project-path }}\TestResults" | Out-Null
-
           coverlet `
             "${{ inputs.test-dll-path }}" `
-            --target "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\Extensions\TestPlatform\vstest.console.exe" `
-            --targetargs "`"${{ inputs.test-dll-path }}`" /Logger:trx /ResultsDirectory:`"${{ inputs.test-project-path }}\TestResults`"" `
+            --target "vstest.console.exe" `
+            --targetargs "`"${{ inputs.test-dll-path }}`"" `
             --format opencover `
-            --output "${{ inputs.test-project-path }}\coverage.opencover.xml"
+            --output "${{ inputs.test-project-path }}/coverage.opencover.xml"
 
-          if (!(Test-Path "${{ inputs.test-project-path }}\coverage.opencover.xml")) {
-            Write-Error "OpenCover file was not generated! Tests may have failed."
-            exit 1
-          }
-
-      # ============================================================
-      # 🟥 SONAR END (FAILS JOB IF QUALITY GATE FAILS)
-      # ============================================================
-      - name: SonarScanner End
+      - name: Sonar End
         shell: pwsh
         run: |
           & "C:\sonar\SonarScanner.MSBuild.exe" end `
             /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
 
-  # =========================================================
-  # JOB 2 – TEMPORARY AWS SECURITY GROUP WHITELIST
-  # =========================================================
-  whitelist:
-    runs-on: ubuntu-latest
-    outputs:
-      ip: ${{ steps.ip.outputs.ip }}
-    steps:
-      - name: Configure AWS OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Get Runner Public IP
-        id: ip
-        run: |
-          IP=$(curl -s https://checkip.amazonaws.com | xargs)
-          echo "ip=$IP" >> $GITHUB_OUTPUT
-
-      - name: Add Temporary SSH Ingress Rule
-        run: |
-          CIDR="${{ steps.ip.outputs.ip }}/32"
-          aws ec2 authorize-security-group-ingress \
-            --region "${{ secrets.AWS_REGION }}" \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port ${{ inputs.ssh-port }} \
-            --cidr "$CIDR" \
-            --no-cli-pager || echo "Rule may already exist"
-
-  # =========================================================
-  # JOB 3 – BUILD + PACKAGE + DEPLOY
-  # =========================================================
+# =========================================================
+# 2️⃣ BUILD + DEPLOY JOB
+# =========================================================
   build-and-deploy:
     runs-on: ${{ inputs.runner }}
-    needs: whitelist
+    needs: [sonar]
+    if: ${{ always() }}
+
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          ref: ${{ github.sha }}
 
       - uses: microsoft/setup-msbuild@v2
         with:
           vs-version: ${{ inputs.vs-version }}
 
-      - name: Build and Package API Project
+      # ===============================
+      # Optional AWS Whitelist
+      # ===============================
+      - name: Configure AWS
+        if: ${{ inputs.run-whitelist == true }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get Runner IP
+        if: ${{ inputs.run-whitelist == true }}
+        id: ip
+        shell: pwsh
+        run: |
+          $ip = (Invoke-RestMethod -Uri "https://checkip.amazonaws.com").Trim()
+          echo "ip=$ip" >> $env:GITHUB_OUTPUT
+
+      - name: Add SSH Rule
+        if: ${{ inputs.run-whitelist == true }}
+        shell: pwsh
+        run: |
+          aws ec2 authorize-security-group-ingress `
+            --region "${{ secrets.AWS_REGION }}" `
+            --group-id "${{ secrets.SG_ID }}" `
+            --protocol tcp `
+            --port ${{ inputs.ssh-port }} `
+            --cidr "${{ steps.ip.outputs.ip }}/32" `
+            --no-cli-pager || echo "Rule may already exist"
+
+      # ===============================
+      # Build
+      # ===============================
+      - name: Build Project
         shell: pwsh
         run: |
           msbuild "${{ inputs.msbuild-solution }}" `
@@ -245,27 +211,23 @@ jobs:
             /p:DeployOnBuild=true `
             /p:PackageTempRootDir="obj\Release\Package\"
 
-      - name: Cleanup Temporary Package Files (Optional)
+      - name: Cleanup Package
         if: always()
         shell: pwsh
         run: |
           Remove-Item "obj\Release\Package\" -Recurse -Force -ErrorAction SilentlyContinue
-      
-      - name: Configure AWS OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          
-      - name: Remove Temporary SSH Ingress Rule
-        if: always()
+
+      # ===============================
+      # Remove SSH Rule
+      # ===============================
+      - name: Remove SSH Rule
+        if: ${{ inputs.run-whitelist == true }}
         shell: pwsh
         run: |
-          $CIDR = "${{ needs.whitelist.outputs.ip }}/32"
           aws ec2 revoke-security-group-ingress `
             --region "${{ secrets.AWS_REGION }}" `
             --group-id "${{ secrets.SG_ID }}" `
             --protocol tcp `
             --port ${{ inputs.ssh-port }} `
-            --cidr "$CIDR" `
-            --no-cli-pager || echo "Rule already removed or never existed"
+            --cidr "${{ steps.ip.outputs.ip }}/32" `
+            --no-cli-pager || echo "Rule already removed"
