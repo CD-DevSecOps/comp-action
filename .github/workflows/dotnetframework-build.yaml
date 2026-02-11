@@ -21,7 +21,7 @@ on:
       
       sonar-project-key:
         description: 'SonarQube project key'
-        required: true
+        required: false
         type: string
 
       sonar-exclude:
