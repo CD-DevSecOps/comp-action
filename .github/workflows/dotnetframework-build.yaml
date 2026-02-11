@@ -36,6 +36,11 @@ on:
       vsonar-opencover-report:
         required: false
         type: string
+
+      run-sonar:
+        required: false
+        type: boolean
+        default: false
       
       ssh-port:
         description: 'SSH port to temporarily allow (usually 22)'
