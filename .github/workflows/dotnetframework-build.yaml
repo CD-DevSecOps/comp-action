@@ -95,6 +95,10 @@ jobs:
         with:
           vs-version: ${{ inputs.vs-version }}
 
+      - name: Setup VSTest
+        if: ${{ inputs.run-tests == true }}
+        uses: microsoft/setup-vstest@v1
+
       - name: Install Sonar Scanner
         shell: pwsh
         run: |
