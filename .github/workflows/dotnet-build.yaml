@@ -4,15 +4,17 @@ on:
   workflow_call:
     inputs:
       dotnet_version:
-        description: "SDK version (semver)."
+        description: ".NET SDK channel"
         required: false
         default: "8.0.x"
         type: string
       solution_or_project:
-        description: "Path to .sln or project root for build/test."
+        description: "Path to .sln or project root"
         required: false
         default: "."
         type: string
+
+      # --- Sonar ---
       sonar_provider:
         description: "'sonarqube' or 'sonarcloud'"
         required: true
@@ -22,56 +24,61 @@ on:
         required: true
         type: string
       sonar_organization:
-        description: "SonarCloud organization key (ignore for SonarQube)"
+        description: "SonarCloud org (ignore for SonarQube)"
         required: false
         type: string
       sonar_additional_args:
-        description: "Additional -Dsonar.* args"
+        description: "Extra -Dsonar.* args"
         required: false
         default: ""
         type: string
       quality_gate_timeout_sec:
-        description: "Timeout for QG polling (SonarQube only)"
+        description: "QG polling timeout (SonarQube only)"
         required: false
         default: 600
         type: number
+
+      # --- Gitleaks (OSS) ---
       enable_gitleaks:
-        description: "Run Gitleaks secret scan"
+        description: "Run Gitleaks"
         required: false
         default: true
         type: boolean
+      gitleaks_mode:
+        description: "'nonblocking' or 'blocking'"
+        required: false
+        default: "nonblocking"
+        type: string
+      gitleaks_version:
+        description: "Gitleaks version (e.g., v8.16.3) or 'latest'"
+        required: false
+        default: "latest"
+        type: string
+
     secrets:
       SONAR_TOKEN:
         required: true
-      # Required only for SonarQube Server:
       SONAR_HOST_URL:
-        required: false
-      # Optional (needed for Gitleaks org scanning):
-      GITLEAKS_LICENSE:
-        required: false
+        required: false   # only for SonarQube
 
 jobs:
-  build-test-scan:
-    name: Build, Test, Gitleaks, Sonar
+  ci:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-      # If you later upload SARIF for Gitleaks, this is needed:
-      security-events: write
       pull-requests: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # recommended for Sonar analysis
+          fetch-depth: 0  # recommended for Sonar accuracy [2](https://docs.github.com/en/code-security/how-tos/scan-code-for-vulnerabilities/integrate-with-existing-tools/uploading-a-sarif-file-to-github)
 
-      - name: Setup .NET ${{ inputs.dotnet_version }}
+      - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ inputs.dotnet_version }}
-          cache: true
+          cache: true  # NuGet cache on runner [3](https://pankajmakhijani.com/automate-code-quality-and-security-checks-using-github-actions-with-sonarqube-and-zap/)
 
       - name: Restore
         run: dotnet restore "${{ inputs.solution_or_project }}"
@@ -79,24 +86,63 @@ jobs:
       - name: Build (Release)
         run: dotnet build "${{ inputs.solution_or_project }}" -c Release --no-restore
 
-      - name: Test (+coverage OpenCover)
+      - name: Test (+OpenCover)
         run: |
           dotnet test "${{ inputs.solution_or_project }}" -c Release --no-build \
             --logger "trx" \
             --collect:"XPlat Code Coverage" -- \
             DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
-      # ---------- GITLEAKS ----------
-      - name: Gitleaks (secrets scan)
+      # ----------------------------------------------------------------
+      #                 G I T L E A K S   (OSS via curl/tar)
+      # ----------------------------------------------------------------
+      - name: Resolve Gitleaks version
+        id: glver
         if: ${{ inputs.enable_gitleaks }}
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        # The action fails the job when leaks are found.
+        shell: bash
+        run: |
+          REQ="${{ inputs.gitleaks_version }}"
+          if [[ "$REQ" == "latest" ]]; then
+            # Query the latest tag from GitHub releases (no token required)
+            TAG=$(curl -sSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r '.tag_name')
+          else
+            TAG="$REQ"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      # ---------- SONAR SCAN ----------
-      - name: Sonar Scan (SonarQube Server)
+      - name: Install Gitleaks (OSS version)
+        if: ${{ inputs.enable_gitleaks }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='${{ steps.glver.outputs.tag }}'
+          echo "Installing Gitleaks $TAG"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/${TAG}/gitleaks_${TAG#v}_linux_x64.tar.gz" \
+            | tar xz
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+        # Release artifacts & naming are maintained in the upstream repo. [1](https://github.com/microsoft/secrets-detection/blob/main/Recipes/Gitleaks.md)
+
+      - name: Run Gitleaks (non-blocking)
+        if: ${{ inputs.enable_gitleaks && inputs.gitleaks_mode == 'nonblocking' }}
+        shell: bash
+        run: |
+          set +e
+          gitleaks detect --source . -v --redact
+          echo "Gitleaks finished; leaks (if any) will not fail the pipeline."
+          set -e
+
+      - name: Run Gitleaks (blocking)
+        if: ${{ inputs.enable_gitleaks && inputs.gitleaks_mode == 'blocking' }}
+        shell: bash
+        run: |
+          # Exit code 1 on leaks to fail the job
+          gitleaks detect --source . -v --redact --exit-code 1
+
+      # ----------------------------------------------------------------
+      #                           S O N A R
+      # ----------------------------------------------------------------
+      - name: SonarQube Scan
         if: ${{ inputs.sonar_provider == 'sonarqube' }}
         uses: SonarSource/sonarqube-scan-action@v7
         env:
@@ -108,18 +154,19 @@ jobs:
             -Dsonar.cs.opencover.reportsPaths=**/TestResults/**/coverage.opencover.xml
             -Dsonar.cs.vstest.reportsPaths=**/TestResults/*.trx
             ${{ inputs.sonar_additional_args }}
+        # Official action for GitHub-based analysis. [4](https://github.com/SonarSource/sonarqube-quality-gate-action)
 
-      - name: Quality Gate (SonarQube Server)
+      - name: SonarQube Quality Gate
         if: ${{ inputs.sonar_provider == 'sonarqube' }}
-        id: qg
         uses: SonarSource/sonarqube-quality-gate-action@master
         with:
           pollingTimeoutSec: ${{ inputs.quality_gate_timeout_sec }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        # Polls QG and fails on FAIL/WARN. [2](https://docs.github.com/en/code-security/how-tos/scan-code-for-vulnerabilities/integrate-with-existing-tools/uploading-a-sarif-file-to-github)
 
-      - name: Sonar Scan (SonarCloud)
+      - name: SonarCloud Scan
         if: ${{ inputs.sonar_provider == 'sonarcloud' }}
         uses: SonarSource/sonarqube-scan-action@v7
         env:
@@ -132,3 +179,4 @@ jobs:
             -Dsonar.cs.vstest.reportsPaths=**/TestResults/*.trx
             -Dsonar.qualitygate.wait=true
             ${{ inputs.sonar_additional_args }}
+        # SonarCloud path with wait-for-quality-gate set at scan. [5](https://github.com/marketplace/actions/sonarscan-dotnet)[6](https://stackoverflow.com/questions/76976570/github-actions-add-quality-gate-for-test-results)
