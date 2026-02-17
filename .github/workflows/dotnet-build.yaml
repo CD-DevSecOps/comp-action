@@ -1,0 +1,134 @@
+name: reusable-dotnet8-ci
+
+on:
+  workflow_call:
+    inputs:
+      dotnet_version:
+        description: "SDK version (semver)."
+        required: false
+        default: "8.0.x"
+        type: string
+      solution_or_project:
+        description: "Path to .sln or project root for build/test."
+        required: false
+        default: "."
+        type: string
+      sonar_provider:
+        description: "'sonarqube' or 'sonarcloud'"
+        required: true
+        type: string
+      sonar_project_key:
+        description: "Sonar project key"
+        required: true
+        type: string
+      sonar_organization:
+        description: "SonarCloud organization key (ignore for SonarQube)"
+        required: false
+        type: string
+      sonar_additional_args:
+        description: "Additional -Dsonar.* args"
+        required: false
+        default: ""
+        type: string
+      quality_gate_timeout_sec:
+        description: "Timeout for QG polling (SonarQube only)"
+        required: false
+        default: 600
+        type: number
+      enable_gitleaks:
+        description: "Run Gitleaks secret scan"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      # Required only for SonarQube Server:
+      SONAR_HOST_URL:
+        required: false
+      # Optional (needed for Gitleaks org scanning):
+      GITLEAKS_LICENSE:
+        required: false
+
+jobs:
+  build-test-scan:
+    name: Build, Test, Gitleaks, Sonar
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # If you later upload SARIF for Gitleaks, this is needed:
+      security-events: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # recommended for Sonar analysis
+
+      - name: Setup .NET ${{ inputs.dotnet_version }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+          cache: true
+
+      - name: Restore
+        run: dotnet restore "${{ inputs.solution_or_project }}"
+
+      - name: Build (Release)
+        run: dotnet build "${{ inputs.solution_or_project }}" -c Release --no-restore
+
+      - name: Test (+coverage OpenCover)
+        run: |
+          dotnet test "${{ inputs.solution_or_project }}" -c Release --no-build \
+            --logger "trx" \
+            --collect:"XPlat Code Coverage" -- \
+            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      # ---------- GITLEAKS ----------
+      - name: Gitleaks (secrets scan)
+        if: ${{ inputs.enable_gitleaks }}
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        # The action fails the job when leaks are found.
+
+      # ---------- SONAR SCAN ----------
+      - name: Sonar Scan (SonarQube Server)
+        if: ${{ inputs.sonar_provider == 'sonarqube' }}
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar_project_key }}
+            -Dsonar.cs.opencover.reportsPaths=**/TestResults/**/coverage.opencover.xml
+            -Dsonar.cs.vstest.reportsPaths=**/TestResults/*.trx
+            ${{ inputs.sonar_additional_args }}
+
+      - name: Quality Gate (SonarQube Server)
+        if: ${{ inputs.sonar_provider == 'sonarqube' }}
+        id: qg
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        with:
+          pollingTimeoutSec: ${{ inputs.quality_gate_timeout_sec }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Sonar Scan (SonarCloud)
+        if: ${{ inputs.sonar_provider == 'sonarcloud' }}
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=${{ inputs.sonar_organization }}
+            -Dsonar.projectKey=${{ inputs.sonar_project_key }}
+            -Dsonar.cs.opencover.reportsPaths=**/TestResults/**/coverage.opencover.xml
+            -Dsonar.cs.vstest.reportsPaths=**/TestResults/*.trx
+            -Dsonar.qualitygate.wait=true
+            ${{ inputs.sonar_additional_args }}
