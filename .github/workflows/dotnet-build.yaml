@@ -60,9 +60,6 @@ jobs:
           dotnet-version: ${{ inputs.dotnet_version }}
           cache: true      # NuGet caching recommended [3](https://bluelight.co/blog/how-to-maintain-code-quality)
 
-      - name: Restore
-        run: dotnet restore "${{ inputs.solution_or_project }}"
-
       - name: Build (Release)
         run: dotnet build "${{ inputs.solution_or_project }}" -c Release --no-restore
 
