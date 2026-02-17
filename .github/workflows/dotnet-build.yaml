@@ -60,15 +60,20 @@ jobs:
           dotnet-version: ${{ inputs.dotnet_version }}
          # cache: true      # NuGet caching recommended [3](https://bluelight.co/blog/how-to-maintain-code-quality)
 
+      
+
       - name: Build (Release)
         run: dotnet build "${{ inputs.solution_or_project }}" -c Release --no-restore
+            dotnet build "User.Insight.Tracker/User.Insight.Tracker.sln" -c Release
+            dotnet test Insight.Tracker.UnitTest/Insight.Tracker.UnitTest.csproj \
+              /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
 
-      - name: Test with Coverage (OpenCover)
-        run: |
-          dotnet test "${{ inputs.solution_or_project }}" -c Release --no-build \
-              --logger "trx" \
-              --collect:"XPlat Code Coverage" -- \
-              DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+      # - name: Test with Coverage (OpenCover)
+      #   run: |
+      #     dotnet test "${{ inputs.solution_or_project }}" -c Release --no-build \
+      #         --logger "trx" \
+      #         --collect:"XPlat Code Coverage" -- \
+      #         DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
       # --------------------------------------------------------------------
       # GITLEAKS OSS (using your install style)
