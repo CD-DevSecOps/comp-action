@@ -132,4 +132,3 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         # Official Quality Gate enforcement for SonarQube Server (Community included). [2](https://github.com/gitleaks/gitleaks)
-``
