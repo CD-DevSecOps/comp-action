@@ -63,10 +63,10 @@ jobs:
       
 
       - name: Build (Release)
-        run: dotnet build "${{ inputs.solution_or_project }}" -c Release --no-restore
-            dotnet build "User.Insight.Tracker/User.Insight.Tracker.sln" -c Release
-            dotnet test Insight.Tracker.UnitTest/Insight.Tracker.UnitTest.csproj \
-              /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+        #run: dotnet build "${{ inputs.solution_or_project }}" -c Release --no-restore
+        run: |   
+          dotnet build "User.Insight.Tracker/User.Insight.Tracker.sln" -c Release
+          dotnet test Insight.Tracker.UnitTest/Insight.Tracker.UnitTest.csproj /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
 
       # - name: Test with Coverage (OpenCover)
       #   run: |
