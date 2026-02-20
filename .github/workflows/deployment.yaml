@@ -1,0 +1,60 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      server_type:
+        required: true
+        type: string
+      host:
+        required: true
+        type: string
+      username:
+        required: true
+        type: string
+      deploy_path:
+        required: true
+        type: string
+    secrets:
+      ssh_key:
+        required: false
+      password:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ✅ Download exact artifact built in CI
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: ./artifact
+
+      #################################################
+      # Linux Deployment
+      #################################################
+      - name: Deploy to Linux
+        if: inputs.server_type == 'linux'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.ssh_key }}
+          source: "./artifact/*"
+          target: ${{ inputs.deploy_path }}
+
+      #################################################
+      # Windows Deployment
+      #################################################
+      - name: Deploy to Windows
+        if: inputs.server_type == 'windows'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.password }}
+          source: "./artifact/*"
+          target: ${{ inputs.deploy_path }}
